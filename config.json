@@ -1,3 +1,4 @@
 {
-  "API_ENDPOINT": "https://sentinel-upload-service-196547645490.asia-south1.run.app"
+  "API_ENDPOINT": "https://sentinel-upload-service-196547645490.asia-south1.run.app",
+  "BIGQUERY_SYNC_URL": "https://asia-south1-sentinel-h-5.cloudfunctions.net/sentinel-bigquery-sync"
 }
