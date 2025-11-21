@@ -50,7 +50,19 @@ function validateCSV() {
                 return row;
             });
             
-            const modifiedCSV = Papa.unparse(processedRows);
+            // Deduplication by unique_id
+            const seenIds = new Set();
+            const deduplicatedRows = processedRows.filter(row => {
+                if (seenIds.has(row.unique_id)) {
+                    return false;
+                }
+                seenIds.add(row.unique_id);
+                return true;
+            });
+            
+            const duplicateCount = processedRows.length - deduplicatedRows.length;
+            
+            const modifiedCSV = Papa.unparse(deduplicatedRows);
             const blob = new Blob([modifiedCSV], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             
@@ -65,6 +77,7 @@ function validateCSV() {
             .then(data => {
                 document.getElementById('result').innerHTML = `
                     <h3 style="color:green">✓ All ${requiredColumns.length} columns present!</h3>
+                    <p style="color:orange">Processed ${processedRows.length} rows, removed ${duplicateCount} duplicates</p>
                     <p style="color:green">File uploaded to GCS: ${data.fileName}</p>
                     <a href="${url}" download="validated_${file.name}" style="background:blue;color:white;padding:10px;text-decoration:none;">Download Cleaned File</a>
                 `;
@@ -72,6 +85,7 @@ function validateCSV() {
             .catch(error => {
                 document.getElementById('result').innerHTML = `
                     <h3 style="color:green">✓ All ${requiredColumns.length} columns present!</h3>
+                    <p style="color:orange">Processed ${processedRows.length} rows, removed ${duplicateCount} duplicates</p>
                     <p style="color:red">Upload failed: ${error.message}</p>
                     <a href="${url}" download="validated_${file.name}" style="background:blue;color:white;padding:10px;text-decoration:none;">Download Cleaned File</a>
                 `;
