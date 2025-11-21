@@ -1,0 +1,29 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: sentinel-upload-service
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      containers:
+      - image: gcr.io/PROJECT_ID/sentinel-upload
+        ports:
+        - containerPort: 3000
+        env:
+        - name: PROJECT_NAME
+          value: "sentinel-5-project"
+        - name: BUCKET_NAME  
+          value: "sentinel-cases-bucket"
+        - name: FOLDER_NAME
+          value: "upload"
+        - name: PORT
+          value: "3000"
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 512Mi
