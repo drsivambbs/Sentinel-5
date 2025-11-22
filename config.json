@@ -1,5 +1,47 @@
 {
-  "API_ENDPOINT": "https://sentinel-upload-service-196547645490.asia-south1.run.app",
-  "BIGQUERY_SYNC_URL": "https://asia-south1-sentinel-h-5.cloudfunctions.net/sentinel-bigquery-sync",
-  "CLUSTERING_URL": "https://asia-south1-sentinel-h-5.cloudfunctions.net/cluster-analysis-v2"
+  "project": {
+    "id": "sentinel-h-5",
+    "name": "sentinel-5-project",
+    "region": "asia-south1"
+  },
+  "storage": {
+    "bucket_name": "sentinel-cases-bucket",
+    "upload_folder": "upload"
+  },
+  "bigquery": {
+    "dataset_id": "sentinel_h_5",
+    "table_id": "patient_records",
+    "cache_table": "sentinel_h_5.geocode_cache",
+    "temp_cluster_table": "temp_cluster_table",
+    "cluster_summary_table": "cluster_summary_table"
+  },
+  "api_endpoints": {
+    "upload_service": "https://sentinel-upload-service-196547645490.asia-south1.run.app",
+    "bigquery_sync": "https://asia-south1-sentinel-h-5.cloudfunctions.net/sentinel-bigquery-sync",
+    "geocoding_service": "https://asia-south1-sentinel-h-5.cloudfunctions.net/geocode-addresses",
+    "clustering_service": "https://asia-south1-sentinel-h-5.cloudfunctions.net/cluster-analysis-v2",
+    "dashboard_api": "https://sentinel-dashboard-api-196547645490.asia-south1.run.app/api/dashboard/stats",
+    "cases_api": "https://sentinel-dashboard-api-196547645490.asia-south1.run.app/api/cases"
+  },
+  "cloud_run": {
+    "upload_service": "https://sentinel-upload-service-196547645490.asia-south1.run.app",
+    "service_name": "sentinel-upload-service",
+    "service_id": "196547645490"
+  },
+  "secrets": {
+    "google_maps_api_key": "google_map_api_key"
+  },
+  "clustering": {
+    "time_window_days": 7,
+    "min_cases": 2,
+    "geocoding_threshold_percent": 90,
+    "gis_eps_meters": 350,
+    "pending_merge_timeout_days": 2,
+    "pending_new_timeout_days": 2,
+    "auto_accept_timeout_days": 3
+  },
+  "scheduler": {
+    "geocoding_schedule": "*/15 * * * *",
+    "timezone": "Asia/Kolkata"
+  }
 }

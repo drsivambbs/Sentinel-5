@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-grid.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-theme-alpine.css">
+</head>
+<body>
+    <h1>API Test</h1>
+    <button onclick="testStatsAPI()">Test Stats API</button>
+    <button onclick="testCasesAPI()">Test Cases API</button>
+    
+    <div id="results" style="margin: 20px 0; padding: 10px; background: #f0f0f0;"></div>
+    
+    <div id="myGrid" class="ag-theme-alpine" style="height: 400px; width: 100%; margin-top: 20px;"></div>
+
+    <script>
+        async function testStatsAPI() {
+            try {
+                const response = await fetch('https://sentinel-dashboard-api-196547645490.asia-south1.run.app/api/dashboard/stats');
+                const data = await response.json();
+                document.getElementById('results').innerHTML = '<h3>Stats API Result:</h3><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+            } catch (error) {
+                document.getElementById('results').innerHTML = '<h3>Stats API Error:</h3><pre>' + error.message + '</pre>';
+            }
+        }
+
+        async function testCasesAPI() {
+            try {
+                const response = await fetch('https://sentinel-dashboard-api-196547645490.asia-south1.run.app/api/cases?limit=5');
+                const data = await response.json();
+                document.getElementById('results').innerHTML = '<h3>Cases API Result:</h3><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                
+                if (data.success && data.data) {
+                    setupGrid(data.data);
+                }
+            } catch (error) {
+                document.getElementById('results').innerHTML = '<h3>Cases API Error:</h3><pre>' + error.message + '</pre>';
+            }
+        }
+
+        function setupGrid(rowData) {
+            const columnDefs = [
+                { field: 'unique_id', headerName: 'Unique ID' },
+                { field: 'patient_entry_date', headerName: 'Entry Date' },
+                { field: 'pat_age', headerName: 'Age' },
+                { field: 'pat_sex', headerName: 'Sex', valueFormatter: params => params.value === 1 ? 'Male' : params.value === 2 ? 'Female' : 'Unknown' },
+                { field: 'clini_primary_syn', headerName: 'Primary Syndrome' },
+                { field: 'site_code', headerName: 'Site Code' },
+                { field: 'complete_address', headerName: 'Address' }
+            ];
+
+            const gridOptions = {
+                columnDefs: columnDefs,
+                rowData: rowData,
+                defaultColDef: {
+                    sortable: true,
+                    filter: true,
+                    resizable: true
+                }
+            };
+
+            const gridDiv = document.querySelector('#myGrid');
+            agGrid.createGrid(gridDiv, gridOptions);
+        }
+    </script>
+</body>
+</html>
