@@ -20,6 +20,7 @@
     "bigquery_sync": "https://asia-south1-sentinel-h-5.cloudfunctions.net/sentinel-bigquery-sync",
     "geocoding_service": "https://asia-south1-sentinel-h-5.cloudfunctions.net/geocode-addresses",
     "clustering_service": "https://asia-south1-sentinel-h-5.cloudfunctions.net/cluster-analysis-v2",
+    "cluster_merge_service": "https://cluster-merge-service-196547645490.asia-south1.run.app",
     "dashboard_api": "https://sentinel-dashboard-api-196547645490.asia-south1.run.app/api/dashboard/stats",
     "cases_api": "https://sentinel-dashboard-api-196547645490.asia-south1.run.app/api/cases"
   },

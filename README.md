@@ -43,6 +43,17 @@ CSV Upload → Cloud Storage → BigQuery Sync → Geocoding → Final Dataset
   - Uses persistent cache to reduce API costs
 - **Location**: Mumbai (asia-south1)
 
+#### 4. Cluster Merge Service (`backend/cluster-merge-service/`)
+- **Technology**: Python Cloud Run
+- **Trigger**: Manual/Scheduled HTTP requests
+- **Function**:
+  - Identifies duplicate clusters using Jaccard similarity
+  - Auto-merges clusters with >60% similarity
+  - Flags 20-59% similarity for manual review
+  - Handles overlap deletion and non-overlapping merges
+  - Provides admin interface for manual approvals
+- **Target**: `sentinel-h-5.sentinel_h_5.daily_detected_clusters`
+
 ## Data Schema
 
 Based on `Reference/excel.json` - 79 columns including:
@@ -82,6 +93,12 @@ gcloud functions deploy geocode-addresses --gen2 --runtime=python311 --region=as
 gcloud scheduler jobs create http geocoding-scheduler --schedule="*/15 * * * *" --uri="https://asia-south1-sentinel-h-5.cloudfunctions.net/geocode-addresses" --http-method=POST --location=asia-south1 --time-zone="Asia/Kolkata" --description="Geocode 100 records every 15 minutes"
 ```
 
+### Deploy Cluster Merge Service
+```bash
+cd backend/cluster-merge-service
+gcloud run deploy cluster-merge-service --source . --platform managed --region asia-south1 --allow-unauthenticated
+```
+
 ## Usage
 
 ### Upload CSV
@@ -93,6 +110,23 @@ gcloud scheduler jobs create http geocoding-scheduler --schedule="*/15 * * * *" 
 - **BigQuery Console**: View `sentinel_h_5.patient_records` table
 - **Cloud Functions Logs**: Monitor processing status
 - **Geocoding Progress**: Check `latitude`/`longitude` population
+
+### Cluster Merge Operations
+
+**Process cluster merges**:
+```bash
+curl -X POST https://cluster-merge-service-196547645490.asia-south1.run.app/merge-clusters
+```
+
+**View pending manual reviews**:
+```bash
+curl https://cluster-merge-service-196547645490.asia-south1.run.app/pending-merges
+```
+
+**Admin interface**:
+- Access: https://cluster-merge-service-196547645490.asia-south1.run.app/admin
+- Approve/decline pending merges
+- View merge statistics
 
 ### Query Examples
 
@@ -113,6 +147,15 @@ WHERE latitude IS NOT NULL
 LIMIT 10;
 ```
 
+**Check cluster merge status**:
+```sql
+SELECT 
+  merge_status,
+  COUNT(*) as count
+FROM `sentinel-h-5.sentinel_h_5.daily_detected_clusters`
+GROUP BY merge_status;
+```
+
 ## Performance
 
 - **Upload**: Immediate processing
@@ -120,6 +163,8 @@ LIMIT 10;
 - **Geocoding**: 100 records every 15 minutes
 - **Daily Capacity**: 9,600 geocoded records
 - **API Optimization**: Persistent cache prevents duplicate geocoding
+- **Cluster Merging**: Processes 5-day windows, handles thousands of clusters
+- **Merge Thresholds**: >60% auto-merge, 20-59% manual review, <20% no merge
 
 ## Security Features
 
@@ -151,6 +196,12 @@ LIMIT 10;
 **Duplicate Records**:
 - System prevents duplicates using `unique_id`
 - Existing records skipped during CSV processing
+
+**Cluster Merge Issues**:
+- Service processes only 'accepted' clusters
+- Overlapping unique_ids are deleted before merging
+- Manual review required for 20-59% similarity
+- Check merge logs in `sentinel_h_5.cluster_merge_log`
 
 ## Environment Variables
 
