@@ -103,7 +103,7 @@ def get_cases():
         limit = request.args.get('limit', 50, type=int)
         offset = request.args.get('offset', 0, type=int)
         
-        # Query for cases data
+        # Query for cases data with 3-month filter
         query = f"""
         SELECT 
             unique_id,
@@ -112,6 +112,10 @@ def get_cases():
             pat_sex,
             clini_primary_syn,
             site_code,
+            statename,
+            districtname,
+            subdistrictname,
+            villagename,
             CONCAT(
                 COALESCE(pat_street, ''), ' ',
                 COALESCE(villagename, ''), ' ',
@@ -119,12 +123,23 @@ def get_cases():
                 COALESCE(statename, '')
             ) as complete_address
         FROM `{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}`
+        WHERE patient_entry_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 MONTH)
         ORDER BY patient_entry_date DESC
         LIMIT {limit} OFFSET {offset}
         """
         
+        # Get total count for pagination
+        count_query = f"""
+        SELECT COUNT(*) as total_count
+        FROM `{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}`
+        WHERE patient_entry_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 MONTH)
+        """
+        
         query_job = client.query(query)
+        count_job = client.query(count_query)
+        
         results = query_job.result()
+        count_result = list(count_job.result())[0]
         
         cases_data = []
         for row in results:
@@ -135,16 +150,108 @@ def get_cases():
                 'pat_sex': row.pat_sex,
                 'clini_primary_syn': row.clini_primary_syn,
                 'site_code': row.site_code,
+                'statename': row.statename,
+                'districtname': row.districtname,
+                'subdistrictname': row.subdistrictname,
+                'villagename': row.villagename,
                 'complete_address': row.complete_address.strip() if row.complete_address else ''
             })
         
         return jsonify({
             'success': True,
             'data': cases_data,
-            'total': len(cases_data)
+            'total': len(cases_data),
+            'total_count': count_result.total_count,
+            'offset': offset,
+            'limit': limit
         })
         
     except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/clusters', methods=['GET'])
+def get_clusters():
+    try:
+        # Query only temp cluster table
+        query = f"""
+        SELECT 
+            cluster_id,
+            case_count,
+            district,
+            state,
+            min_date,
+            max_date,
+            accept_status,
+            created_at
+        FROM `{PROJECT_ID}.{DATASET_ID}.temp_cluster_table`
+        ORDER BY created_at DESC
+        LIMIT 100
+        """
+        
+        query_job = client.query(query)
+        results = query_job.result()
+        
+        clusters_data = []
+        for row in results:
+            location = f"{row.district or ''}, {row.state or ''}".strip(', ')
+            date_range = f"{row.min_date} - {row.max_date}" if row.min_date and row.max_date else ''
+            
+            clusters_data.append({
+                'cluster_id': row.cluster_id,
+                'case_count': row.case_count,
+                'location': location,
+                'date_range': date_range,
+                'accept_status': row.accept_status,
+                'created_at': str(row.created_at) if row.created_at else None
+            })
+        
+        return jsonify({
+            'success': True,
+            'data': clusters_data
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/clusters/update', methods=['POST'])
+def update_cluster_status():
+    try:
+        from flask import request
+        data = request.get_json()
+        
+        cluster_id = data.get('cluster_id')
+        status = data.get('accept_status')
+        
+        # Update cluster status
+        query = f"""
+        UPDATE `{PROJECT_ID}.{DATASET_ID}.temp_cluster_table`
+        SET accept_status = @status,
+            updated_at = CURRENT_TIMESTAMP()
+        WHERE cluster_id = @cluster_id
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter('status', 'STRING', status),
+                bigquery.ScalarQueryParameter('cluster_id', 'STRING', cluster_id)
+            ]
+        )
+        
+        query_job = client.query(query, job_config=job_config)
+        query_job.result()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Cluster {cluster_id} status updated to {status}'
+        })
+        
+    } except Exception as e:
         return jsonify({
             'success': False,
             'error': str(e)
