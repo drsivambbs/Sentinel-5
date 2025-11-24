@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentinel - H | Table View</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom scrollbar for aesthetics */
+        .custom-scroll::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 4px;
+        }
+        .custom-scroll::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        /* Compact table styles */
+        .compact-table {
+            font-size: 0.8125rem;
+        }
+        .compact-table th {
+            position: sticky;
+            top: 0;
+            background: #f8fafc;
+            z-index: 10;
+        }
+        .compact-table tbody tr:hover {
+            background-color: #f0f9ff;
+        }
+        .compact-table td {
+            padding: 0.375rem 0.5rem;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: '#3b82f6', /* Blue */
+                        success: '#10b981', /* Green */
+                        warning: '#f59e0b', /* Yellow */
+                        danger: '#ef4444', /* Red */
+                        background: '#f8fafc',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background font-sans antialiased text-gray-800 h-screen overflow-hidden">
+
+    <script>
+        // Initialize application
+        window.onload = function() {
+            console.log('Cluster Engine loaded');
+            loadSampleData();
+        };
+
+        // Sample data for demonstration
+        let allRecords = [];
+        let filteredRecords = [];
+        let currentPage = 1;
+        let rowsPerPage = 25;
+
+        function loadSampleData() {
+            allRecords = [
+                { id: 'cluster001', algo: 'K-Means', cases: 15, onset_date: '2024-01-15', symptoms: 'Fever, Cough, Fatigue', radius: 2.5, status: 'Active' },
+                { id: 'cluster002', algo: 'DBSCAN', cases: 23, onset_date: '2024-01-18', symptoms: 'Headache, Nausea', radius: 3.8, status: 'Active' },
+                { id: 'cluster003', algo: 'Hierarchical', cases: 8, onset_date: '2024-01-20', symptoms: 'Respiratory, Fever', radius: 1.2, status: 'Monitoring' },
+                { id: 'cluster004', algo: 'K-Means', cases: 42, onset_date: '2024-01-12', symptoms: 'Fever, Sore Throat', radius: 5.6, status: 'Resolved' },
+                { id: 'cluster005', algo: 'DBSCAN', cases: 31, onset_date: '2024-01-22', symptoms: 'Cough, Fatigue, Fever', radius: 4.3, status: 'Active' }
+            ];
+            applyFilters();
+        }
+
+        // --- Filtering & Search ---
+        window.filterTable = function() {
+            applyFilters();
+        }
+
+        window.applyFilters = function() {
+            const searchTerm = document.getElementById('searchInput')?.value.toLowerCase() || '';
+            const filterAlgo = document.getElementById('filterAlgo')?.value || '';
+            const filterStatus = document.getElementById('filterStatus')?.value || '';
+            const filterMinCases = parseInt(document.getElementById('filterMinCases')?.value) || 0;
+            const filterMaxRadius = parseFloat(document.getElementById('filterMaxRadius')?.value) || Infinity;
+
+            filteredRecords = allRecords.filter(record => {
+                const matchesSearch = !searchTerm || 
+                    record.id.toLowerCase().includes(searchTerm) ||
+                    (record.algo || '').toLowerCase().includes(searchTerm) ||
+                    (record.symptoms || '').toLowerCase().includes(searchTerm) ||
+                    (record.status || '').toLowerCase().includes(searchTerm);
+                
+                const matchesAlgo = !filterAlgo || record.algo === filterAlgo;
+                const matchesStatus = !filterStatus || record.status === filterStatus;
+                const matchesCases = (record.cases || 0) >= filterMinCases;
+                const matchesRadius = (record.radius || 0) <= filterMaxRadius;
+
+                return matchesSearch && matchesAlgo && matchesStatus && matchesCases && matchesRadius;
+            });
+
+            currentPage = 1;
+            updateTable();
+        }
+
+        window.clearFilters = function() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('filterAlgo').value = '';
+            document.getElementById('filterStatus').value = '';
+            document.getElementById('filterMinCases').value = '';
+            document.getElementById('filterMaxRadius').value = '';
+            applyFilters();
+        }
+
+        window.toggleAdvancedFilter = function() {
+            const panel = document.getElementById('advancedFilterPanel');
+            panel.classList.toggle('hidden');
+        }
+
+        // --- Pagination ---
+        window.changeRowsPerPage = function() {
+            rowsPerPage = parseInt(document.getElementById('rowsPerPage').value);
+            currentPage = 1;
+            updateTable();
+        }
+
+        window.firstPage = function() {
+            currentPage = 1;
+            updateTable();
+        }
+
+        window.prevPage = function() {
+            if (currentPage > 1) {
+                currentPage--;
+                updateTable();
+            }
+        }
+
+        window.nextPage = function() {
+            const totalPages = Math.ceil(filteredRecords.length / rowsPerPage);
+            if (currentPage < totalPages) {
+                currentPage++;
+                updateTable();
+            }
+        }
+
+        window.lastPage = function() {
+            currentPage = Math.ceil(filteredRecords.length / rowsPerPage);
+            updateTable();
+        }
+
+        // --- Data Operations ---
+        window.deleteRecord = function(id) {
+            if (!confirm('Are you sure you want to delete this cluster?')) return;
+            
+            allRecords = allRecords.filter(record => record.id !== id);
+            applyFilters();
+            showNotification('Cluster deleted successfully.', 'success');
+        }
+
+        window.toggleStatus = function(id, currentStatus) {
+            const statusMap = { 'Active': 'Resolved', 'Resolved': 'Monitoring', 'Monitoring': 'Active' };
+            const newStatus = statusMap[currentStatus] || 'Active';
+            
+            const record = allRecords.find(r => r.id === id);
+            if (record) {
+                record.status = newStatus;
+                applyFilters();
+                showNotification(`Status changed to ${newStatus}.`, 'success');
+            }
+        }on(`Status changed to ${newStatus}.`, 'success');
+            } catch (e) {
+                console.error("Error toggling status: ", e);
+                showNotification('Error updating status.', 'danger');
+            }
+        }
+
+
+
+        // --- UI Rendering ---
+        function updateTable() {
+            const tbody = document.getElementById('tableBody');
+            
+            if (filteredRecords.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-gray-400">No clusters found.</td></tr>`;
+                document.getElementById('recordCount').textContent = '0 clusters';
+                document.getElementById('pageInfo').textContent = '0-0 of 0';
+                updatePaginationButtons();
+                return;
+            }
+
+            // Sort by creation time (newest first)
+            filteredRecords.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+
+            // Pagination
+            const startIndex = (currentPage - 1) * rowsPerPage;
+            const endIndex = Math.min(startIndex + rowsPerPage, filteredRecords.length);
+            const paginatedRecords = filteredRecords.slice(startIndex, endIndex);
+
+            tbody.innerHTML = paginatedRecords.map(record => {
+                const onsetDate = record.onset_date || 'N/A';
+                const statusColors = {
+                    'Active': 'bg-danger/20 text-danger',
+                    'Resolved': 'bg-success/20 text-success',
+                    'Monitoring': 'bg-warning/20 text-warning'
+                };
+                const statusColor = statusColors[record.status] || 'bg-gray-200 text-gray-600';
+                
+                return `
+                    <tr class="border-b border-gray-100">
+                        <td class="px-2 py-1.5 font-mono text-xs text-gray-700">${record.id.substring(0, 12)}...</td>
+                        <td class="px-2 py-1.5 text-xs text-gray-700">${record.algo || 'N/A'}</td>
+                        <td class="px-2 py-1.5 text-xs text-gray-700 text-center font-semibold">${record.cases || 0}</td>
+                        <td class="px-2 py-1.5 text-xs text-gray-600">${onsetDate}</td>
+                        <td class="px-2 py-1.5 text-xs text-gray-600">${record.symptoms || 'N/A'}</td>
+                        <td class="px-2 py-1.5 text-xs text-gray-600 text-center">${record.radius ? record.radius.toFixed(1) + ' km' : 'N/A'}</td>
+                        <td class="px-2 py-1.5 text-center">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColor} cursor-pointer" 
+                                onclick="toggleStatus('${record.id}', '${record.status}')" 
+                                title="Click to cycle status">
+                                ${record.status || 'Unknown'}
+                            </span>
+                        </td>
+                        <td class="px-2 py-1.5 text-center">
+                            <button onclick="deleteRecord('${record.id}')" class="bg-danger hover:bg-red-600 text-white px-2 py-0.5 text-xs rounded transition-colors">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            document.getElementById('recordCount').textContent = `${filteredRecords.length} cluster${filteredRecords.length !== 1 ? 's' : ''}`;
+            document.getElementById('pageInfo').textContent = `${startIndex + 1}-${endIndex} of ${filteredRecords.length}`;
+            updatePaginationButtons();
+        }
+
+        function updatePaginationButtons() {
+            const totalPages = Math.ceil(filteredRecords.length / rowsPerPage);
+            document.getElementById('firstBtn').disabled = currentPage === 1;
+            document.getElementById('prevBtn').disabled = currentPage === 1;
+            document.getElementById('nextBtn').disabled = currentPage >= totalPages;
+            document.getElementById('lastBtn').disabled = currentPage >= totalPages;
+        }
+
+        // --- Utility Functions ---
+        window.toggleSidebar = function() {
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar) {
+                sidebar.classList.toggle('collapsed');
+            }
+        }
+
+        window.goBack = function() {
+            window.location.href = 'index.html';
+        }
+
+        window.showNotification = function(message, type = 'primary') {
+            const container = document.getElementById('notificationContainer');
+            const colorMap = {
+                primary: 'bg-primary border-primary',
+                success: 'bg-success border-success',
+                warning: 'bg-warning border-warning',
+                danger: 'bg-danger border-danger'
+            };
+
+            const notif = document.createElement('div');
+            notif.className = `p-4 mb-2 rounded-lg text-white shadow-lg border-l-4 ${colorMap[type]}`;
+            notif.textContent = message;
+
+            container.appendChild(notif);
+
+            setTimeout(() => {
+                notif.classList.add('opacity-0', 'transition-opacity', 'duration-500');
+                notif.addEventListener('transitionend', () => container.removeChild(notif));
+            }, 3000);
+        }
+    </script>
+
+    <div id="notificationContainer" class="fixed bottom-4 right-4 z-50 max-w-sm">
+        <!-- Notifications will appear here -->
+    </div>
+
+    <!-- Main Container -->
+    <div class="flex flex-col h-screen">
+        
+        <!-- Header Bar -->
+        <div class="bg-white shadow-md border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <button onclick="goBack()" class="flex items-center space-x-2 text-gray-600 hover:text-primary transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                    </svg>
+                    <span class="font-medium">Back</span>
+                </button>
+                <div class="h-6 w-px bg-gray-300"></div>
+                <h1 class="text-xl font-bold text-gray-800">Sentinel - H</h1>
+                <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">Cluster Table</span>
+            </div>
+            <div class="flex items-center space-x-3 flex-1 max-w-2xl mx-4">
+                <div class="relative flex-1">
+                    <input type="text" id="searchInput" placeholder="Search clusters..." 
+                        class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition text-sm"
+                        onkeyup="filterTable()">
+                    <svg class="w-5 h-5 absolute left-3 top-2.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                </div>
+                <button onclick="toggleAdvancedFilter()" class="flex items-center space-x-2 bg-primary hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors text-sm whitespace-nowrap">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+                    </svg>
+                    <span>Advanced Filter</span>
+                </button>
+            </div>
+            <div class="flex items-center space-x-3">
+                <span id="recordCount" class="text-xs text-gray-600 bg-primary/10 px-3 py-1 rounded-full font-medium">0 records</span>
+                <span id="userIdDisplay" class="text-xs text-gray-500">Local Mode</span>
+            </div>
+        </div>
+
+        <!-- Advanced Filter Panel -->
+        <div id="advancedFilterPanel" class="hidden bg-gray-50 border-b border-gray-200 px-4 py-3">
+            <div class="grid grid-cols-4 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Algorithm</label>
+                    <select id="filterAlgo" class="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition text-sm" onchange="applyFilters()">
+                        <option value="">All</option>
+                        <option value="K-Means">K-Means</option>
+                        <option value="DBSCAN">DBSCAN</option>
+                        <option value="Hierarchical">Hierarchical</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Status</label>
+                    <select id="filterStatus" class="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition text-sm" onchange="applyFilters()">
+                        <option value="">All</option>
+                        <option value="Active">Active</option>
+                        <option value="Resolved">Resolved</option>
+                        <option value="Monitoring">Monitoring</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Cases (Min)</label>
+                    <input type="number" id="filterMinCases" placeholder="0" class="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition text-sm" onchange="applyFilters()">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Radius (Max km)</label>
+                    <input type="number" id="filterMaxRadius" placeholder="∞" class="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition text-sm" onchange="applyFilters()">
+                </div>
+            </div>
+            <div class="mt-2 flex justify-end">
+                <button onclick="clearFilters()" class="text-xs text-gray-600 hover:text-primary transition-colors">Clear Filters</button>
+            </div>
+        </div>
+
+        <!-- Table Container -->
+        <div class="flex-1 overflow-hidden p-2">
+            <div class="bg-white rounded-xl shadow-lg h-full flex flex-col overflow-hidden">
+                <div class="flex-1 overflow-auto custom-scroll">
+                    <table class="w-full compact-table text-left">
+                        <thead>
+                            <tr class="border-b-2 border-gray-200">
+                                <th class="px-2 py-1.5 text-xs font-semibold text-gray-600">Cluster_ID</th>
+                                <th class="px-2 py-1.5 text-xs font-semibold text-gray-600">Algo</th>
+                                <th class="px-2 py-1.5 text-xs font-semibold text-gray-600 text-center">#Cases</th>
+                                <th class="px-2 py-1.5 text-xs font-semibold text-gray-600">Onset_Date</th>
+                                <th class="px-2 py-1.5 text-xs font-semibold text-gray-600">Symptoms</th>
+                                <th class="px-2 py-1.5 text-xs font-semibold text-gray-600 text-center">Radius</th>
+                                <th class="px-2 py-1.5 text-xs font-semibold text-gray-600 text-center">Status</th>
+                                <th class="px-2 py-1.5 text-xs font-semibold text-gray-600 text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                            <tr><td colspan="8" class="text-center py-8 text-gray-400">Loading records...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Pagination -->
+                <div class="border-t border-gray-200 px-4 py-2 flex items-center justify-between bg-gray-50">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs text-gray-600">Rows per page:</span>
+                        <select id="rowsPerPage" class="px-2 py-1 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-primary focus:border-primary" onchange="changeRowsPerPage()">
+                            <option value="10">10</option>
+                            <option value="25" selected>25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <span id="pageInfo" class="text-xs text-gray-600">1-25 of 100</span>
+                        <div class="flex items-center space-x-1">
+                            <button onclick="firstPage()" class="px-2 py-1 border border-gray-300 rounded hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" id="firstBtn">
+                                <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>
+                                </svg>
+                            </button>
+                            <button onclick="prevPage()" class="px-2 py-1 border border-gray-300 rounded hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" id="prevBtn">
+                                <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                                </svg>
+                            </button>
+                            <button onclick="nextPage()" class="px-2 py-1 border border-gray-300 rounded hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" id="nextBtn">
+                                <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                                </svg>
+                            </button>
+                            <button onclick="lastPage()" class="px-2 py-1 border border-gray-300 rounded hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" id="lastBtn">
+                                <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+</html>

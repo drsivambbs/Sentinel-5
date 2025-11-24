@@ -1,235 +1,565 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Sentinel-5 | ICMR-NIE</title>
-
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
-
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    
-    html, body {
-      height: 100%;
-      font-family: 'Roboto', sans-serif;
-      background: #f8f9fa;
-      color: #333;
-    }
-
-    body {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 60px 8% 100px 8%;
-      min-height: 100vh;
-    }
-
-    .logo-section {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding-right: 60px;
-    }
-
-    .logo-container {
-      background: white;
-      padding: 40px;
-      border-radius: 16px;
-      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
-      max-width: 400px;
-    }
-
-    .logo-container img {
-      width: 100%;
-      height: auto;
-      border-radius: 12px;
-    }
-
-    .login-box {
-      background: white;
-      width: 100%;
-      max-width: 320px;
-      border-radius: 10px;
-      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.1);
-      overflow: hidden;
-    }
-
-    .login-header {
-      background: #003087;
-      color: white;
-      padding: 24px 20px 20px;
-      text-align: center;
-      border-radius: 10px 10px 0 0;
-    }
-    .login-header .material-icons {
-      font-size: 32px;
-      margin-bottom: 6px;
-    }
-    .login-header h1 {
-      font-size: 20px;
-      font-weight: 700;
-      margin-bottom: 2px;
-    }
-    .login-header p {
-      font-size: 12px;
-      opacity: 0.85;
-    }
-
-    .login-body {
-      padding: 20px;
-    }
-
-    .form-group {
-      margin-bottom: 16px;
-    }
-    label {
-      display: block;
-      margin-bottom: 4px;
-      font-weight: 500;
-      font-size: 13px;
-      color: #444;
-    }
-    input[type="text"],
-    input[type="password"] {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1.5px solid #ccc;
-      border-radius: 6px;
-      font-size: 14px;
-      transition: all 0.3s;
-    }
-    input:focus {
-      outline: none;
-      border-color: #003087;
-      box-shadow: 0 0 0 4px rgba(0, 48, 135, 0.12);
-    }
-
-    .login-btn {
-      background: #003087;
-      color: white;
-      border: none;
-      padding: 12px;
-      width: 100%;
-      border-radius: 6px;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.3s;
-    }
-    .login-btn:hover {
-      background: #00205b;
-    }
-
-    .footer {
-      text-align: center;
-      padding: 12px 20px;
-      background: #f5f5f5;
-      color: #555;
-      font-size: 11px;
-      border-top: 1px solid #eee;
-      line-height: 1.4;
-      border-radius: 0 0 10px 10px;
-    }
-    .footer a {
-      color: #003087;
-      text-decoration: none;
-    }
-    .footer a:hover {
-      text-decoration: underline;
-    }
-
-    /* Mobile: center the box */
-    @media (max-width: 992px) {
-      body {
-        flex-direction: column;
-        justify-content: center;
-        padding: 40px 20px 80px;
-      }
-      .logo-section {
-        padding-right: 0;
-        padding-bottom: 30px;
-      }
-      .logo-container {
-        padding: 20px;
-        max-width: 200px;
-      }
-      .login-box {
-        max-width: 300px;
-      }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Management System</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom scrollbar for aesthetics */
+        .custom-scroll::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 4px;
+        }
+        .custom-scroll::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        /* Fix for main content overflow in nested flex containers */
+        #cluster, #merge {
+            min-height: 100%;
+        }
+        /* Sidebar collapse styles */
+        #sidebar {
+            transition: width 0.3s ease, padding 0.3s ease;
+        }
+        #sidebar.collapsed {
+            width: 4rem;
+        }
+        #sidebar.collapsed .nav-text,
+        #sidebar.collapsed h2,
+        #sidebar.collapsed #userIdDisplay {
+            opacity: 0;
+            width: 0;
+            overflow: hidden;
+            transition: opacity 0.2s ease;
+        }
+        #sidebar:not(.collapsed) .nav-text,
+        #sidebar:not(.collapsed) h2,
+        #sidebar:not(.collapsed) #userIdDisplay {
+            opacity: 1;
+            width: auto;
+            transition: opacity 0.3s ease 0.1s;
+        }
+        #sidebar.collapsed .nav-item {
+            justify-content: center;
+            margin-left: 0.5rem;
+            margin-right: 0.5rem;
+        }
+        #sidebar.collapsed .nav-item svg {
+            margin: 0;
+        }
+        #sidebar.collapsed .px-5 {
+            padding-left: 0.75rem;
+            padding-right: 0.75rem;
+        }
+        #sidebar.collapsed .border-b,
+        #sidebar.collapsed .border-t {
+            border-left: 0;
+            border-right: 0;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: '#3b82f6', /* Blue */
+                        success: '#10b981', /* Green */
+                        warning: '#f59e0b', /* Yellow */
+                        danger: '#ef4444', /* Red */
+                        background: '#f8fafc',
+                    }
+                }
+            }
+        }
+    </script>
 </head>
-<body>
+<body class="bg-background font-sans antialiased text-gray-800">
 
-  <div class="logo-section">
-    <div class="logo-container">
-      <img src="https://nie.gov.in/frontend-assets/images/logo/icmr.jpeg" alt="ICMR Logo" />
-    </div>
-  </div>
+    <script>
+        // Initialize application
+        window.onload = function() {
+            console.log('Application loaded');
+        };
+        
+        window.toggleSidebar = function() {
+            document.getElementById('sidebar').classList.toggle('collapsed');
+        }
+        window.addMergeItem = async function() {
+            const title = document.getElementById('mergeItemTitle').value.trim();
+            const content = document.getElementById('mergeItemContent').value.trim();
+            closeModal('addMergeModal');
 
-  <div class="login-box">
-    <div class="login-header">
-      <span class="material-icons">shield</span>
-      <h1>Sentinel-5</h1>
-      <p>Event Based Surveillance System Automation</p>
-    </div>
+            if (!title || !content || !window.currentMergeType || !db || !userId) {
+                showNotification('Title and Content cannot be empty or user not authenticated.', 'warning');
+                return;
+            }
+            
+            try {
+                const mergeCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/merge_items`);
+                await setDoc(doc(mergeCollectionRef), {
+                    title: title,
+                    content: content,
+                    type: window.currentMergeType, // 'urban' or 'rural'
+                    created: serverTimestamp()
+                });
+                showNotification(`${window.currentMergeType.toUpperCase()} item added.`, 'success');
+                document.getElementById('mergeItemTitle').value = '';
+                document.getElementById('mergeItemContent').value = '';
+            } catch (e) {
+                console.error("Error adding merge item: ", e);
+                showNotification('Error adding item.', 'danger');
+            }
+        }
 
-    <div class="login-body">
-      <form id="loginForm">
-        <div class="form-group">
-          <label for="username">Username</label>
-          <input type="text" id="username" required placeholder="Enter your username" />
-        </div>
-        <div class="form-group">
-          <label for="password">Password</label>
-          <input type="password" id="password" required placeholder="Enter your password" />
-        </div>
-        <button type="submit" class="login-btn">Sign In</button>
-      </form>
-    </div>
+        window.deleteMergeItem = async function(id) {
+            if (!db || !userId) return;
+            try {
+                const mergeDocRef = doc(db, `artifacts/${appId}/users/${userId}/merge_items`, id);
+                await deleteDoc(mergeDocRef);
+                showNotification('Merge item deleted.', 'success');
+            } catch (e) {
+                console.error("Error deleting merge item: ", e);
+                showNotification('Error deleting item.', 'danger');
+            }
+        }
 
-    <div class="footer">
-      © 2025 Indian Council of Medical Research<br>
-      National Institute of Epidemiology (ICMR-NIE), Chennai<br>
-      <a href="#">Contact Administrator</a>
-    </div>
-  </div>
+        // SETTINGS OPERATIONS
+        // Removed global settingsDocPath definition
 
-  <script>
-    let credentials = { id: 'icmr_admin', password: 'icmr_password' };
+        window.loadSettings = async function() {
+            if (!db || !userId) return;
+            try {
+                // FIX: Dynamically construct the doc reference using path segments
+                const settingsDocRef = doc(db, 'artifacts', appId, 'users', userId, 'settings', 'config');
+                const settingsSnap = await getDoc(settingsDocRef);
+                
+                if (settingsSnap.exists()) {
+                    const settings = settingsSnap.data();
+                    document.getElementById('autoSave').checked = settings.autoSave ?? true;
+                    document.getElementById('notifications').checked = settings.notifications ?? false;
+                    document.getElementById('maxRecords').value = settings.maxRecords ?? 100;
+                    // Only show notification if it successfully loaded data
+                    // showNotification('Settings loaded.', 'success'); 
+                }
+            } catch (e) {
+                console.error("Error loading settings:", e);
+                // Notification for user is handled by onAuthStateChanged error boundary
+            }
+        }
 
-    // Load from .env file
-    fetch('.env')
-      .then(response => response.text())
-      .then(data => {
-        const lines = data.split('\n');
-        lines.forEach(line => {
-          if (line.includes('ADMIN_ID=')) {
-            credentials.id = line.split('=')[1].trim();
-          }
-          if (line.includes('ADMIN_PASSWORD=')) {
-            credentials.password = line.split('=')[1].trim();
-          }
+        window.saveSettings = async function() {
+            if (!db || !userId) return;
+            // FIX: Dynamically construct the doc reference using path segments
+            const settingsDocRef = doc(db, 'artifacts', appId, 'users', userId, 'settings', 'config');
+            try {
+                const settings = {
+                    autoSave: document.getElementById('autoSave').checked,
+                    notifications: document.getElementById('notifications').checked,
+                    maxRecords: parseInt(document.getElementById('maxRecords').value, 10) || 100,
+                    updatedAt: serverTimestamp()
+                };
+                await setDoc(settingsDocRef, settings, { merge: true });
+                showNotification('Settings saved successfully!', 'success');
+            } catch (e) {
+                console.error("Error saving settings:", e);
+                showNotification('Error saving settings.', 'danger');
+            }
+        }
+        
+        window.clearData = function() {
+            showConfirmationModal(
+                'Clear All Data',
+                'Are you absolutely sure you want to clear ALL Clusters and Merge Items? This action cannot be undone.',
+                async () => {
+                    if (!db || !userId) return;
+                    try {
+                        const batch = writeBatch(db);
+                        
+                        // Delete all clusters
+                        const clustersQuery = query(collection(db, `artifacts/${appId}/users/${userId}/clusters`));
+                        const clusterSnapshot = await getDocs(clustersQuery);
+                        clusterSnapshot.docs.forEach(d => batch.delete(d.ref));
+
+                        // Delete all merge items
+                        const mergeQuery = query(collection(db, `artifacts/${appId}/users/${userId}/merge_items`));
+                        const mergeSnapshot = await getDocs(mergeQuery);
+                        mergeSnapshot.docs.forEach(d => batch.delete(d.ref));
+
+                        await batch.commit();
+                        showNotification('All application data cleared successfully.', 'success');
+                    } catch (e) {
+                        console.error("Error clearing data:", e);
+                        showNotification('Error clearing data.', 'danger');
+                    }
+                }
+            );
+        }
+
+        // --- UI Rendering Functions ---
+        
+        function updateStats() {
+            const totalClusters = window.globalClusters?.length || 0;
+            const totalUrban = window.globalUrban?.length || 0;
+            const totalRural = window.globalRural?.length || 0;
+            const totalRecords = (window.globalClusters?.reduce((sum, c) => sum + c.items.length, 0) || 0) + totalUrban + totalRural;
+
+            document.getElementById('totalRecords').textContent = totalRecords;
+            document.getElementById('totalClusters').textContent = totalClusters;
+            document.getElementById('totalMerges').textContent = totalUrban + totalRural;
+        }
+
+        function updateClusterList(clusters) {
+            const list = document.getElementById('clusterList');
+            if (clusters.length === 0) {
+                list.innerHTML = '<tr><td colspan="5" class="text-center py-5 text-gray-400">No clusters created yet</td></tr>';
+                return;
+            }
+
+            // Sort by creation time (newest first, assuming timestamp is present)
+            clusters.sort((a, b) => (b.created?.seconds || 0) - (a.created?.seconds || 0));
+            
+            list.innerHTML = clusters.map(cluster => {
+                const statusColor = cluster.status === 'accepted' ? 'text-success' : 'text-danger';
+                const statusIcon = cluster.status === 'accepted' ? '✓' : '✗';
+                const createdTime = cluster.created ? new Date(cluster.created.seconds * 1000).toLocaleString() : 'N/A';
+                
+                return `
+                    <tr class="border-b border-gray-100 hover:bg-blue-50 transition-colors">
+                        <td class="p-3 text-gray-500">${cluster.id.substring(0, 8)}...</td>
+                        <td class="p-3 font-medium">${cluster.items.join(', ')}</td>
+                        <td class="p-3 text-sm text-gray-500">${createdTime}</td>
+                        <td class="p-3 text-center">
+                            <span class="${statusColor} font-bold text-lg cursor-pointer" 
+                                onclick="toggleClusterStatus('${cluster.id}', '${cluster.status}')" 
+                                title="Click to toggle status">
+                                ${statusIcon}
+                            </span>
+                        </td>
+                        <td class="p-3 text-center">
+                            <button onclick="deleteCluster('${cluster.id}')" class="bg-danger hover:bg-red-600 text-white px-3 py-1 text-xs rounded-lg shadow-md transition-colors">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function updateMergeContainers(urbanItems, ruralItems) {
+            updateSingleMergeContainer('urbanContainer', urbanItems, 'bg-primary/10 border-primary/40');
+            updateSingleMergeContainer('ruralContainer', ruralItems, 'bg-success/10 border-success/40');
+        }
+
+        function updateSingleMergeContainer(containerId, items, colorClasses) {
+            const container = document.getElementById(containerId);
+            
+            if (items.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-400 p-4 text-sm">No items yet</div>';
+                return;
+            }
+            
+            // Sort by creation time (newest first)
+            items.sort((a, b) => (b.created?.seconds || 0) - (a.created?.seconds || 0));
+
+            container.innerHTML = items.map(item => {
+                const createdTime = item.created ? new Date(item.created.seconds * 1000).toLocaleString() : 'N/A';
+                const baseClasses = "p-3 rounded-lg border-l-4 shadow-sm";
+
+                return `
+                    <div class="${baseClasses} ${colorClasses} break-words">
+                        <div class="flex justify-between items-start mb-2">
+                            <strong class="text-sm text-gray-800">${item.title}</strong>
+                            <button onclick="deleteMergeItem('${item.id}')" class="bg-danger hover:bg-red-600 text-white px-2 py-0.5 text-xs rounded-md transition-colors ml-2">X</button>
+                        </div>
+                        <p class="text-xs text-gray-600 mb-1">${item.content}</p>
+                        <small class="text-xs text-gray-500 block">${createdTime}</small>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // --- General UI Utilities ---
+        
+        window.toggleSidebar = function() {
+            document.getElementById('sidebar').classList.toggle('collapsed');
+        }
+
+        window.switchSection = function(section) {
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('bg-primary/10', 'border-primary', 'font-semibold');
+            });
+            document.querySelectorAll('.section').forEach(sec => {
+                sec.classList.remove('flex');
+                sec.classList.add('hidden');
+            });
+            
+            document.querySelector(`[data-section="${section}"]`).classList.add('bg-primary/10', 'border-primary', 'font-semibold');
+            document.getElementById(section).classList.remove('hidden');
+            document.getElementById(section).classList.add('flex');
+        }
+
+        // Initialize first section view
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    window.switchSection(this.dataset.section);
+                });
+            });
+            window.switchSection('dashboard');
         });
-      })
-      .catch(() => console.log('Using fallback credentials'));
 
-    // Handle login
-    document.getElementById('loginForm').addEventListener('submit', function(e) {
-      e.preventDefault();
-      
-      const username = document.getElementById('username').value;
-      const password = document.getElementById('password').value;
-      
-      if (username === credentials.id && password === credentials.password) {
-        window.location.href = 'dashboard.html';
-      } else {
-        alert('Invalid credentials');
-      }
-    });
-  </script>
+        // --- Modal/Notification System (Replacement for alert/confirm) ---
+
+        // Confirmation Modal
+        let confirmCallback = () => {};
+
+        window.showConfirmationModal = function(title, message, callback) {
+            document.getElementById('confirmationTitle').textContent = title;
+            document.getElementById('confirmationMessage').textContent = message;
+            confirmCallback = callback;
+            document.getElementById('confirmationModal').classList.remove('hidden');
+        }
+
+        window.confirmAction = function() {
+            confirmCallback();
+            document.getElementById('confirmationModal').classList.add('hidden');
+        }
+
+        window.cancelAction = function() {
+            document.getElementById('confirmationModal').classList.add('hidden');
+        }
+        
+        // Add Cluster/Merge Modals
+        window.showAddClusterModal = function() {
+            document.getElementById('addClusterModal').classList.remove('hidden');
+        }
+
+        window.closeModal = function(modalId) {
+            document.getElementById(modalId).classList.add('hidden');
+            if (modalId === 'addClusterModal') {
+                document.getElementById('clusterData').value = '';
+            } else if (modalId === 'addMergeModal') {
+                document.getElementById('mergeItemTitle').value = '';
+                document.getElementById('mergeItemContent').value = '';
+                window.currentMergeType = '';
+            }
+        }
+
+        window.showAddMergeModal = function(type) {
+            window.currentMergeType = type;
+            document.getElementById('mergeModalTitle').textContent = `Add ${type.charAt(0).toUpperCase() + type.slice(1)} Item`;
+            document.getElementById('addMergeModal').classList.remove('hidden');
+        }
+
+        // Notification System
+        window.showNotification = function(message, type = 'primary') {
+            const container = document.getElementById('notificationContainer');
+            const colorMap = {
+                primary: 'bg-primary border-primary',
+                success: 'bg-success border-success',
+                warning: 'bg-warning border-warning',
+                danger: 'bg-danger border-danger'
+            };
+
+            const notif = document.createElement('div');
+            notif.className = `p-4 mb-2 rounded-lg text-white shadow-lg border-l-4 ${colorMap[type]}`;
+            notif.textContent = message;
+
+            container.appendChild(notif);
+
+            setTimeout(() => {
+                notif.classList.add('opacity-0', 'transition-opacity', 'duration-500');
+                notif.addEventListener('transitionend', () => container.removeChild(notif));
+            }, 3000);
+        }
+    </script>
+
+    <div id="notificationContainer" class="fixed bottom-4 right-4 z-50 max-w-sm">
+        <!-- Notifications will appear here -->
+    </div>
+
+    <!-- Main Application Container -->
+    <div class="flex h-screen overflow-hidden">
+        <!-- Sidebar -->
+        <div class="h-screen">
+            <div id="sidebar" class="sidebar w-60 bg-white shadow-xl my-4 ml-4 mr-0 rounded-xl flex flex-col transition-all duration-300 custom-scroll overflow-y-auto h-[calc(100vh-2rem)]">
+                
+                <div class="px-5 pt-5 pb-3 flex justify-between items-center border-b border-gray-200">
+                    <h2 class="text-xl font-bold text-gray-800 whitespace-nowrap">DataFlow</h2>
+                    <button class="text-gray-500 hover:text-gray-900 focus:outline-none flex-shrink-0" onclick="toggleSidebar()">
+                        <span id="sidebar-toggle-icon">
+                            <!-- Menu icon -->
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                        </span>
+                    </button>
+                </div>
+                
+                <div class="py-2 flex-grow">
+                    <div class="nav-item p-3 mx-3 my-1 rounded-lg cursor-pointer transition-colors hover:bg-gray-100 border-l-4 border-transparent active-item bg-primary/10 border-primary font-semibold flex items-center" data-section="dashboard">
+                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        <span class="nav-text ml-3">Dashboard</span>
+                    </div>
+                    <div class="nav-item p-3 mx-3 my-1 rounded-lg cursor-pointer transition-colors hover:bg-gray-100 border-l-4 border-transparent flex items-center" onclick="window.location.href='cluster-engine.html'">
+                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 3-3m-6 6l3 3 3-3"></path></svg>
+                        <span class="nav-text ml-3">Cluster Engine</span>
+                    </div>
+                    <div class="nav-item p-3 mx-3 my-1 rounded-lg cursor-pointer transition-colors hover:bg-gray-100 border-l-4 border-transparent flex items-center" data-section="merge">
+                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+                        <span class="nav-text ml-3">Merge Engine</span>
+                    </div>
+                    <div class="nav-item p-3 mx-3 my-1 rounded-lg cursor-pointer transition-colors hover:bg-gray-100 border-l-4 border-transparent flex items-center" data-section="settings">
+                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                        <span class="nav-text ml-3">Settings</span>
+                    </div>
+                </div>
+                
+                <div class="px-5 py-3 border-t border-gray-200">
+                    <p id="userIdDisplay" class="text-xs text-gray-500 truncate">Loading user...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="main-content flex-1 p-4 md:p-8 custom-scroll">
+            
+            <!-- Dashboard Section -->
+            <div class="section flex flex-col h-full space-y-8" id="dashboard">
+                <h1 class="text-3xl font-extrabold text-gray-900">Dashboard</h1>
+                <p class="text-gray-500 -mt-6">Real-time overview of your data management activity.</p>
+                
+                <!-- Stats Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    <div class="bg-white p-5 rounded-xl shadow-lg border-l-4 border-primary">
+                        <h4 class="text-sm font-semibold text-gray-500 mb-1">Total Records</h4>
+                        <div class="text-3xl font-bold text-gray-800" id="totalRecords">0</div>
+                        <p class="text-xs text-gray-400 mt-2">Sum of all clustered and merged items.</p>
+                    </div>
+                    <div class="bg-white p-5 rounded-xl shadow-lg border-l-4 border-warning">
+                        <h4 class="text-sm font-semibold text-gray-500 mb-1">Active Clusters</h4>
+                        <div class="text-3xl font-bold text-gray-800" id="totalClusters">0</div>
+                        <p class="text-xs text-gray-400 mt-2">Unique clustering operations performed.</p>
+                    </div>
+                    <div class="bg-white p-5 rounded-xl shadow-lg border-l-4 border-success">
+                        <h4 class="text-sm font-semibold text-gray-500 mb-1">Merge Items</h4>
+                        <div class="text-3xl font-bold text-gray-800" id="totalMerges">0</div>
+                        <p class="text-xs text-gray-400 mt-2">Total urban and rural data points.</p>
+                    </div>
+                </div>
+
+                <!-- Quick Actions Card -->
+                <div class="bg-white p-6 rounded-xl shadow-lg">
+                    <h3 class="text-xl font-semibold text-gray-800 mb-3">Quick Actions</h3>
+                    <div class="space-x-4">
+                        <button onclick="window.location.href='cluster-engine.html'" class="bg-primary hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md">Start Clustering</button>
+                        <button onclick="switchSection('merge')" class="bg-success hover:bg-green-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md">Manage Merges</button>
+                    </div>
+                </div>
+            </div>
+
+
+
+            <!-- Merge Engine Section -->
+            <div class="section hidden flex-col h-full space-y-4" id="merge">
+                <h1 class="text-3xl font-extrabold text-gray-900">Merge Engine</h1>
+                <p class="text-gray-500 -mt-6">Manage data points categorized for merge operations (Urban/Rural comparison).</p>
+                <div class="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 pb-4">
+                    
+                    <!-- Urban Container -->
+                    <div class="bg-white rounded-xl shadow-lg flex flex-col overflow-hidden h-full">
+                        <div class="p-3 bg-primary text-white flex justify-between items-center">
+                            <h3 class="font-semibold text-lg">Urban Data Points</h3>
+                            <button onclick="showAddMergeModal('urban')" class="bg-white bg-opacity-20 hover:bg-opacity-30 text-white font-medium py-1 px-3 text-sm rounded-lg transition-colors">+ Add Urban Item</button>
+                        </div>
+                        <div id="urbanContainer" class="flex-1 overflow-y-auto custom-scroll p-4 space-y-3">
+                            <div class="text-center text-gray-400 p-4 text-sm">Loading urban items...</div>
+                        </div>
+                    </div>
+
+                    <!-- Rural Container -->
+                    <div class="bg-white rounded-xl shadow-lg flex flex-col overflow-hidden h-full">
+                        <div class="p-3 bg-success text-white flex justify-between items-center">
+                            <h3 class="font-semibold text-lg">Rural Data Points</h3>
+                            <button onclick="showAddMergeModal('rural')" class="bg-white bg-opacity-20 hover:bg-opacity-30 text-white font-medium py-1 px-3 text-sm rounded-lg transition-colors">+ Add Rural Item</button>
+                        </div>
+                        <div id="ruralContainer" class="flex-1 overflow-y-auto custom-scroll p-4 space-y-3">
+                            <div class="text-center text-gray-400 p-4 text-sm">Loading rural items...</div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Settings Section -->
+            <div class="section hidden flex-col h-full space-y-4" id="settings">
+                <h1 class="text-3xl font-extrabold text-gray-900">Settings</h1>
+                <p class="text-gray-500 -mt-6">Configure your application preferences and manage underlying data.</p>
+                
+                <div class="bg-white p-6 rounded-xl shadow-lg space-y-6">
+                    <h3 class="text-xl font-semibold text-gray-800 border-b pb-3 mb-4">General Settings</h3>
+                    
+                    <label class="flex items-center space-x-3 cursor-pointer">
+                        <input type="checkbox" id="autoSave" class="form-checkbox h-5 w-5 text-primary rounded-md focus:ring-primary transition duration-150 ease-in-out">
+                        <span class="text-lg text-gray-700">Auto-save changes to Firestore</span>
+                    </label>
+                    
+                    <label class="flex items-center space-x-3 cursor-pointer">
+                        <input type="checkbox" id="notifications" class="form-checkbox h-5 w-5 text-primary rounded-md focus:ring-primary transition duration-150 ease-in-out">
+                        <span class="text-lg text-gray-700">Enable real-time success notifications</span>
+                    </label>
+                    
+                    <div>
+                        <label for="maxRecords" class="block text-sm font-medium text-gray-700 mb-1">Max records per page (UI Display limit)</label>
+                        <input type="number" id="maxRecords" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition" placeholder="100" value="100">
+                    </div>
+                    
+                    <button onclick="saveSettings()" class="bg-primary hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg transition-colors w-full shadow-md">Save Settings</button>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl shadow-lg">
+                    <h3 class="text-xl font-semibold text-gray-800 border-b pb-3 mb-4">Danger Zone</h3>
+                    <button onclick="clearData()" class="bg-danger hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition-colors w-full shadow-md">Clear ALL Application Data</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+
+
+
+    <!-- 2. Add Merge Item Modal -->
+    <div id="addMergeModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden flex items-center justify-center z-40">
+        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md transform transition-all">
+            <h3 id="mergeModalTitle" class="text-xl font-bold text-gray-800 mb-4">Add Item</h3>
+            <label for="mergeItemTitle" class="block text-sm font-medium text-gray-700 mb-1">Title</label>
+            <input type="text" id="mergeItemTitle" placeholder="Data Title" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition mb-3">
+            
+            <label for="mergeItemContent" class="block text-sm font-medium text-gray-700 mb-1">Content/Description</label>
+            <textarea id="mergeItemContent" placeholder="Detailed information about the data point." rows="4" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition mb-6"></textarea>
+            
+            <div class="flex justify-end space-x-3">
+                <button onclick="closeModal('addMergeModal')" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-medium py-2 px-4 rounded-lg transition-colors">Cancel</button>
+                <button onclick="addMergeItem()" class="bg-primary hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg transition-colors">Add Item</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 3. Confirmation Modal (Replaces confirm()) -->
+    <div id="confirmationModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm transform transition-all">
+            <h3 id="confirmationTitle" class="text-xl font-bold text-danger mb-3">Confirm Action</h3>
+            <p id="confirmationMessage" class="text-gray-700 mb-6">Are you sure?</p>
+            <div class="flex justify-end space-x-3">
+                <button onclick="cancelAction()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-medium py-2 px-4 rounded-lg transition-colors">Cancel</button>
+                <button onclick="confirmAction()" class="bg-danger hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition-colors">Confirm</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
