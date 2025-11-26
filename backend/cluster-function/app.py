@@ -3,6 +3,7 @@
 
 
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 from google.cloud import bigquery
 from datetime import datetime, timedelta, timezone
 import pandas as pd
@@ -20,6 +21,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+CORS(app, origins="*")
 
 # ============================================================================
 # CONFIGURATION
@@ -1054,6 +1056,164 @@ def config():
         },
         'timestamp': datetime.now(timezone.utc).isoformat()
     })
+
+@app.route('/test', methods=['POST'])
+def test_clustering():
+    """Comprehensive test function - validates all steps without writing to BigQuery"""
+    try:
+        logger.info("Starting comprehensive clustering test...")
+        
+        # Get last 3 processed dates for comparison
+        last_dates_query = f"""
+        SELECT DISTINCT input_date 
+        FROM `{CLUSTERS_TABLE}`
+        ORDER BY input_date DESC
+        LIMIT 3
+        """
+        last_dates_df = client.query(last_dates_query).to_dataframe()
+        last_dates = [d.strftime('%Y-%m-%d') for d in last_dates_df.input_date] if len(last_dates_df) > 0 else []
+        
+        # Find next date to test
+        next_date = find_next_date()
+        if not next_date:
+            return jsonify({
+                'success': False,
+                'message': 'No unprocessed dates available for testing'
+            })
+        
+        test_results = {
+            'test_date': next_date,
+            'comparison_dates': last_dates,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'steps': {},
+            'inconsistencies': [],
+            'summary': {}
+        }
+        
+        # Step 1: Pre-flight validation with geocoding inconsistency check
+        geocoding_query = f"""
+        WITH daily_stats AS (
+          SELECT 
+            DATE({PATIENT_ENTRY_DATE}) as date,
+            COUNTIF({AREA_TYPE} = 'Urban') as total_urban,
+            COUNTIF({LATITUDE} IS NOT NULL AND {LONGITUDE} IS NOT NULL 
+                    AND {LATITUDE} != 0 AND {LONGITUDE} != 0 
+                    AND {AREA_TYPE} = 'Urban') as geocoded_urban_reported,
+            COUNTIF({LATITUDE} IS NOT NULL AND {LONGITUDE} IS NOT NULL 
+                    AND {LATITUDE} != 0 AND {LONGITUDE} != 0 
+                    AND {AREA_TYPE} = 'Urban'
+                    AND (pat_street IS NOT NULL AND pat_street != '' OR villagename IS NOT NULL AND villagename != '')) as geocoded_urban_usable
+          FROM `{SOURCE_TABLE}`
+          WHERE {PATIENT_ENTRY_DATE} >= DATE_SUB(DATE('{next_date}'), INTERVAL {DEDUP_LOOKBACK_DAYS} DAY)
+            AND {PATIENT_ENTRY_DATE} <= DATE('{next_date}')
+          GROUP BY 1
+        )
+        SELECT 
+          SUM(total_urban) as total_urban_records,
+          SUM(geocoded_urban_reported) as total_geocoded_reported,
+          SUM(geocoded_urban_usable) as total_geocoded_usable,
+          ROUND(SUM(geocoded_urban_reported) * 100.0 / SUM(total_urban), 2) as reported_percentage,
+          ROUND(SUM(geocoded_urban_usable) * 100.0 / SUM(total_urban), 2) as usable_percentage
+        FROM daily_stats
+        WHERE total_urban > 0
+        """
+        
+        geocoding_df = client.query(geocoding_query).to_dataframe()
+        
+        if len(geocoding_df) > 0:
+            row = geocoding_df.iloc[0]
+            inconsistency_detected = abs(row.reported_percentage - row.usable_percentage) > 5.0
+            
+            test_results['steps']['geocoding_validation'] = {
+                'total_urban_records': int(row.total_urban_records),
+                'geocoded_reported': int(row.total_geocoded_reported),
+                'geocoded_usable': int(row.total_geocoded_usable),
+                'reported_percentage': float(row.reported_percentage),
+                'usable_percentage': float(row.usable_percentage),
+                'inconsistency_detected': bool(inconsistency_detected)
+            }
+            
+            if inconsistency_detected:
+                test_results['inconsistencies'].append({
+                    'type': 'geocoding_threshold_inconsistency',
+                    'message': f'Reported: {row.reported_percentage}% vs Usable: {row.usable_percentage}%',
+                    'severity': 'critical'
+                })
+        
+        # Step 2: Address filtering validation
+        filter_query = f"""
+        SELECT 
+            COUNT(*) as total_urban,
+            COUNTIF((pat_street IS NOT NULL AND pat_street != '') OR (villagename IS NOT NULL AND villagename != '')) as has_address,
+            COUNTIF({LATITUDE} IS NOT NULL AND {LONGITUDE} IS NOT NULL AND {LATITUDE} != 0 AND {LONGITUDE} != 0) as has_coordinates
+        FROM `{SOURCE_TABLE}`
+        WHERE {PATIENT_ENTRY_DATE} = DATE('{next_date}')
+          AND {AREA_TYPE} = 'Urban'
+        """
+        
+        filter_df = client.query(filter_query).to_dataframe()
+        
+        if len(filter_df) > 0:
+            row = filter_df.iloc[0]
+            test_results['steps']['address_filtering'] = {
+                'total_urban': int(row.total_urban),
+                'has_address': int(row.has_address),
+                'has_coordinates': int(row.has_coordinates),
+                'filter_efficiency': float(round(row.has_address * 100.0 / row.total_urban, 2)) if row.total_urban > 0 else 0.0
+            }
+        
+        # Step 3: Historical comparison
+        if last_dates:
+            history_query = f"""
+            SELECT 
+                input_date,
+                algorithm_type,
+                COUNT(*) as cluster_count
+            FROM `{CLUSTERS_TABLE}`
+            WHERE input_date IN UNNEST(@dates)
+            GROUP BY 1, 2
+            ORDER BY 1 DESC, 2
+            """
+            
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ArrayQueryParameter('dates', 'DATE', [pd.to_datetime(d).date() for d in last_dates])
+                ]
+            )
+            
+            history_df = client.query(history_query, job_config=job_config).to_dataframe()
+            
+            if len(history_df) > 0:
+                abc_counts = history_df[history_df['algorithm_type'] == 'ABC']['cluster_count'].tolist()
+                gis_counts = history_df[history_df['algorithm_type'] == 'GIS']['cluster_count'].tolist()
+                
+                test_results['steps']['historical_comparison'] = {
+                    'abc_cluster_counts': abc_counts,
+                    'gis_cluster_counts': gis_counts,
+                    'abc_variance': float(np.var(abc_counts)) if len(abc_counts) > 1 else 0,
+                    'gis_variance': float(np.var(gis_counts)) if len(gis_counts) > 1 else 0
+                }
+        
+        # Generate summary
+        critical_issues = len([i for i in test_results['inconsistencies'] if i.get('severity') == 'critical'])
+        test_results['summary'] = {
+            'overall_status': 'failed' if critical_issues > 0 else 'passed',
+            'total_inconsistencies': len(test_results['inconsistencies']),
+            'critical_issues': critical_issues
+        }
+        
+        logger.info("Comprehensive test completed")
+        return jsonify({
+            'success': True,
+            'data': test_results
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in test function: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 # ============================================================================
 # MAIN

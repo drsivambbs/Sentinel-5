@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - Data Management System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: '#3b82f6',
+                        success: '#10b981',
+                        warning: '#f59e0b',
+                        danger: '#ef4444',
+                        background: '#f8fafc',
+                    }
+                }
+            }
+        }
+    </script>
+    <script>
+        // Default parameter values
+        const defaultParams = {
+            dbscanEps: 500,
+            maxRadius: 650,
+            geocodingThreshold: 85,
+            autoAcceptRadius: 200,
+            minClusterSize: 2,
+            lookbackDays: 7,
+            overlapMergeThreshold: 70,
+            overlapRelatedThreshold: 30
+        };
+
+        function resetToDefaults() {
+            Object.keys(defaultParams).forEach(key => {
+                document.getElementById(key).value = defaultParams[key];
+            });
+        }
+
+        async function submitParameters() {
+            const params = {};
+            Object.keys(defaultParams).forEach(key => {
+                params[key] = document.getElementById(key).value;
+            });
+            
+            try {
+                const response = await fetch('https://cluster-function-196547645490.asia-south1.run.app/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(params)
+                });
+                
+                if (response.ok) {
+                    alert('Parameters updated successfully!');
+                } else {
+                    alert('Failed to update parameters');
+                }
+            } catch (error) {
+                alert('Error updating parameters: ' + error.message);
+            }
+        }
+
+        async function runQualityCheck() {
+            const btn = document.getElementById('qualityCheckBtn');
+            const results = document.getElementById('qualityResults');
+            
+            btn.textContent = 'Running...';
+            btn.disabled = true;
+            results.classList.add('hidden');
+            
+            try {
+                const response = await fetch('https://cluster-function-196547645490.asia-south1.run.app/test', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayQualityResults(data.data);
+                } else {
+                    results.innerHTML = '<div class="text-red-600">Error: ' + data.error + '</div>';
+                    results.classList.remove('hidden');
+                }
+            } catch (error) {
+                results.innerHTML = '<div class="text-red-600">Network error: ' + error.message + '</div>';
+                results.classList.remove('hidden');
+            } finally {
+                btn.textContent = 'Run Quality Check';
+                btn.disabled = false;
+            }
+        }
+
+        function displayQualityResults(data) {
+            const results = document.getElementById('qualityResults');
+            const summary = data.summary;
+            const geocoding = data.steps.geocoding_validation;
+            const filtering = data.steps.address_filtering;
+            const historical = data.steps.historical_comparison;
+            
+            const statusIcon = summary.overall_status === 'passed' ? '✅' : '❌';
+            const statusColor = summary.overall_status === 'passed' ? 'text-green-600' : 'text-red-600';
+            
+            let html = `
+                <div class="bg-gray-50 p-3 rounded-lg border">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="font-semibold text-gray-800">Quality Assessment Report</h4>
+                        <span class="${statusColor} font-bold text-sm">${statusIcon} ${summary.overall_status.toUpperCase()}</span>
+                    </div>
+                    
+                    <div class="text-xs text-gray-500 mb-3">
+                        Generated: ${new Date().toLocaleString()}<br>
+                        Test Date: ${data.test_date || 'N/A'}
+                    </div>
+            `;
+            
+            // Step 1: Data Validation
+            if (geocoding) {
+                const geocodingStatus = geocoding.inconsistency_detected ? '⚠️' : '✅';
+                const geocodingColor = geocoding.inconsistency_detected ? 'text-yellow-600' : 'text-green-600';
+                
+                html += `
+                    <div class="mb-4 border-l-4 border-blue-500 pl-3">
+                        <div class="flex items-center justify-between mb-2">
+                            <h5 class="font-medium text-gray-700">Step 1: Data Validation</h5>
+                            <span class="${geocodingColor}">${geocodingStatus}</span>
+                        </div>
+                        <div class="bg-white p-2 rounded text-xs space-y-1">
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">Total Urban Records:</span>
+                                <span class="font-medium">${geocoding.total_urban_records.toLocaleString()}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">Geocoded (Reported):</span>
+                                <span class="font-medium">${geocoding.geocoded_reported.toLocaleString()} (${geocoding.reported_percentage}%)</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">Geocoded (Usable):</span>
+                                <span class="font-medium">${geocoding.geocoded_usable.toLocaleString()} (${geocoding.usable_percentage}%)</span>
+                            </div>
+                            ${geocoding.inconsistency_detected ? 
+                                '<div class="text-yellow-600 mt-1 p-1 bg-yellow-50 rounded">⚠️ Quality gap detected between reported and usable coordinates</div>' : 
+                                '<div class="text-green-600 mt-1 p-1 bg-green-50 rounded">✅ Geocoding quality is consistent</div>'
+                            }
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Step 2: Data Coverage Analysis
+            if (filtering) {
+                const filterStatus = filtering.filter_efficiency >= 90 ? '✅' : filtering.filter_efficiency >= 70 ? '⚠️' : '❌';
+                const filterColor = filtering.filter_efficiency >= 90 ? 'text-green-600' : filtering.filter_efficiency >= 70 ? 'text-yellow-600' : 'text-red-600';
+                const rejectedUrban = filtering.total_urban - filtering.has_address;
+                const rejectedCoords = filtering.has_address - filtering.has_coordinates;
+                
+                html += `
+                    <div class="mb-4 border-l-4 border-green-500 pl-3">
+                        <div class="flex items-center justify-between mb-2">
+                            <h5 class="font-medium text-gray-700">Step 2: Data Coverage Analysis</h5>
+                            <span class="${filterColor}">${filterStatus}</span>
+                        </div>
+                        <div class="bg-white p-2 rounded text-xs space-y-1">
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="bg-blue-50 p-1 rounded">
+                                    <div class="text-blue-600 font-medium">Urban Records</div>
+                                    <div class="flex justify-between">
+                                        <span>Total:</span><span class="font-medium">${filtering.total_urban.toLocaleString()}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span>Valid Address:</span><span class="font-medium">${filtering.has_address.toLocaleString()}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span>Valid Coords:</span><span class="font-medium">${filtering.has_coordinates.toLocaleString()}</span>
+                                    </div>
+                                    <div class="flex justify-between text-red-600">
+                                        <span>Rejected:</span><span class="font-medium">${rejectedUrban.toLocaleString()}</span>
+                                    </div>
+                                </div>
+                                <div class="bg-green-50 p-1 rounded">
+                                    <div class="text-green-600 font-medium">Rural Records</div>
+                                    <div class="text-xs text-gray-600">Processed via ABC clustering</div>
+                                    <div class="text-xs text-gray-600">No geocoding required</div>
+                                    <div class="text-xs text-green-600 mt-1">✅ Village-based grouping</div>
+                                </div>
+                            </div>
+                            <div class="flex justify-between border-t pt-1">
+                                <span class="text-gray-600">Urban Filter Efficiency:</span>
+                                <span class="font-medium ${filterColor}">${filtering.filter_efficiency}%</span>
+                            </div>
+                            <div class="mt-1 p-1 ${filtering.filter_efficiency >= 90 ? 'bg-green-50 text-green-600' : filtering.filter_efficiency >= 70 ? 'bg-yellow-50 text-yellow-600' : 'bg-red-50 text-red-600'} rounded text-xs">
+                                ${filtering.filter_efficiency >= 90 ? '✅ Excellent urban data quality' : 
+                                  filtering.filter_efficiency >= 70 ? '⚠️ Good urban data quality' : 
+                                  '❌ Poor urban data quality - ' + rejectedUrban.toLocaleString() + ' records will be rejected'}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Step 3: Historical Comparison
+            if (historical) {
+                html += `
+                    <div class="mb-4 border-l-4 border-purple-500 pl-3">
+                        <div class="flex items-center justify-between mb-2">
+                            <h5 class="font-medium text-gray-700">Step 3: Historical Analysis</h5>
+                            <span class="text-blue-600">📊</span>
+                        </div>
+                        <div class="bg-white p-2 rounded text-xs space-y-2">
+                            <div>
+                                <div class="text-gray-600 mb-1">ABC Clustering Trends:</div>
+                                <div class="flex justify-between">
+                                    <span>Recent Counts:</span>
+                                    <span class="font-medium">[${historical.abc_cluster_counts.join(', ')}]</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Variance:</span>
+                                    <span class="font-medium">${historical.abc_variance.toFixed(2)}</span>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-gray-600 mb-1">GIS Clustering Trends:</div>
+                                <div class="flex justify-between">
+                                    <span>Recent Counts:</span>
+                                    <span class="font-medium">[${historical.gis_cluster_counts.join(', ')}]</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Variance:</span>
+                                    <span class="font-medium">${historical.gis_variance.toFixed(2)}</span>
+                                </div>
+                            </div>
+                            <div class="mt-1 p-1 bg-blue-50 text-blue-600 rounded text-xs">
+                                📈 Variance indicates clustering pattern stability
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Issues Summary
+            if (data.inconsistencies.length > 0) {
+                html += `
+                    <div class="border-l-4 border-red-500 pl-3">
+                        <div class="flex items-center justify-between mb-2">
+                            <h5 class="font-medium text-gray-700">Issues Detected</h5>
+                            <span class="text-red-600 font-bold">${data.inconsistencies.length}</span>
+                        </div>
+                        <div class="bg-red-50 p-2 rounded text-xs space-y-1">
+                            ${data.inconsistencies.map(issue => 
+                                `<div class="flex items-start space-x-2">
+                                    <span class="text-red-500 mt-0.5">•</span>
+                                    <div>
+                                        <div class="font-medium text-red-700">${issue.type || 'Issue'}</div>
+                                        <div class="text-red-600">${issue.message}</div>
+                                        <div class="text-red-500 text-xs mt-0.5">Severity: ${issue.severity || 'Unknown'}</div>
+                                    </div>
+                                </div>`
+                            ).join('')}
+                        </div>
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div class="border-l-4 border-green-500 pl-3">
+                        <div class="flex items-center justify-between mb-2">
+                            <h5 class="font-medium text-gray-700">System Health</h5>
+                            <span class="text-green-600">✅</span>
+                        </div>
+                        <div class="bg-green-50 p-2 rounded text-xs text-green-700">
+                            ✅ No critical issues detected. System is ready for processing.
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Recommendations
+            html += `
+                <div class="mt-4 border-t pt-3">
+                    <h5 class="font-medium text-gray-700 mb-2">Recommendations</h5>
+                    <div class="bg-blue-50 p-2 rounded text-xs text-blue-700 space-y-1">
+            `;
+            
+            if (geocoding && geocoding.usable_percentage < 85) {
+                html += '<div>• Improve geocoding quality before processing</div>';
+            }
+            if (filtering && filtering.filter_efficiency < 70) {
+                const rejectedCount = filtering.total_urban - filtering.has_address;
+                html += `<div>• Review address data quality - ${rejectedCount.toLocaleString()} urban records will be rejected</div>`;
+            }
+            if (data.inconsistencies.length > 0) {
+                html += '<div>• Resolve detected issues before proceeding</div>';
+            }
+            if (data.inconsistencies.length === 0 && (!geocoding || geocoding.usable_percentage >= 85)) {
+                html += '<div>• System is ready for clustering operations</div>';
+            }
+            
+            html += `
+                    </div>
+                </div>
+                </div>
+            `;
+            
+            results.innerHTML = html;
+            results.classList.remove('hidden');
+        }
+
+        async function runProcessing() {
+            const btn = document.getElementById('processBtn');
+            const results = document.getElementById('operationResults');
+            
+            btn.innerHTML = '<svg class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg><span>Processing...</span>';
+            btn.disabled = true;
+            
+            try {
+                const response = await fetch('https://cluster-function-196547645490.asia-south1.run.app/process', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    results.innerHTML = `
+                        <div class="bg-green-50 p-2 rounded border border-green-200">
+                            <div class="text-green-700 font-medium mb-1">✅ Processing Complete</div>
+                            <div class="text-green-600 text-xs space-y-0.5">
+                                <div>Date: ${data.date_processed || 'N/A'}</div>
+                                <div>ABC Clusters: ${data.abc_clusters || 0}</div>
+                                <div>GIS Clusters: ${data.gis_clusters || 0}</div>
+                                <div>Accepted: ${data.gis_accepted || 0}</div>
+                                <div>Pending: ${data.gis_pending || 0}</div>
+                                <div>Merges: ${data.merges || 0}</div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    results.innerHTML = `<div class="bg-red-50 p-2 rounded border border-red-200 text-red-700 text-xs">❌ ${data.message}</div>`;
+                }
+                results.classList.remove('hidden');
+            } catch (error) {
+                results.innerHTML = `<div class="bg-red-50 p-2 rounded border border-red-200 text-red-700 text-xs">❌ Error: ${error.message}</div>`;
+                results.classList.remove('hidden');
+            } finally {
+                btn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h1m4 0h1m6-10V7a3 3 0 11-6 0V4a3 3 0 11-6 0v3a3 3 0 11-6 0v3"></path></svg><span>Start Processing</span>';
+                btn.disabled = false;
+            }
+        }
+
+        async function checkStatus() {
+            const results = document.getElementById('operationResults');
+            
+            try {
+                const response = await fetch('https://cluster-function-196547645490.asia-south1.run.app/status');
+                const data = await response.json();
+                
+                results.innerHTML = `
+                    <div class="bg-blue-50 p-2 rounded border border-blue-200">
+                        <div class="text-blue-700 font-medium mb-1">📈 System Status</div>
+                        <div class="text-blue-600 text-xs space-y-0.5">
+                            <div>Dates Processed: ${data.dates_processed || 0}</div>
+                            <div>Last Date: ${data.last_processed_date ? new Date(data.last_processed_date).toLocaleDateString() : 'None'}</div>
+                            <div>ABC Clusters: ${data.total_abc_clusters || 0}</div>
+                            <div>GIS Clusters: ${data.total_gis_clusters || 0}</div>
+                        </div>
+                    </div>
+                `;
+                results.classList.remove('hidden');
+            } catch (error) {
+                results.innerHTML = `<div class="bg-red-50 p-2 rounded border border-red-200 text-red-700 text-xs">❌ Error: ${error.message}</div>`;
+                results.classList.remove('hidden');
+            }
+        }
+
+
+    </script>
+</head>
+<body class="bg-background font-sans antialiased text-gray-800">
+    <div class="min-h-screen p-4">
+        <!-- Header -->
+        <div class="max-w-7xl mx-auto mb-6">
+            <div class="flex items-center space-x-4">
+                <button onclick="window.history.back()" class="flex items-center text-primary hover:text-blue-700 transition-colors">
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                    </svg>
+                    Back
+                </button>
+                <div class="border-l border-gray-300 pl-4">
+                    <h1 class="text-2xl font-bold text-gray-900">Settings</h1>
+                    <p class="text-gray-500 text-sm">Configure clustering parameters and system preferences</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Content -->
+        <div class="max-w-7xl mx-auto">
+            
+            <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                <!-- Column 1 -->
+                <div class="bg-white p-2 rounded shadow">
+                    <h3 class="text-sm font-semibold text-gray-800 mb-1">Clustering Parameters</h3>
+                    
+                    <div class="space-y-1.5">
+                        <div>
+                            <label for="dbscanEps" class="block text-xs text-gray-600 mb-0.5">DBSCAN Epsilon (m)</label>
+                            <input type="number" id="dbscanEps" class="w-full p-1 text-xs border border-gray-300 rounded" placeholder="500" value="500">
+                        </div>
+                        
+                        <div>
+                            <label for="maxRadius" class="block text-xs text-gray-600 mb-0.5">Maximum Cluster Radius (m)</label>
+                            <input type="number" id="maxRadius" class="w-full p-1 text-xs border border-gray-300 rounded" placeholder="650" value="650">
+                        </div>
+                        
+                        <div>
+                            <label for="geocodingThreshold" class="block text-xs text-gray-600 mb-0.5">Geocoding Threshold (%)</label>
+                            <input type="number" id="geocodingThreshold" class="w-full p-1 text-xs border border-gray-300 rounded" placeholder="85" value="85" min="0" max="100">
+                        </div>
+                        
+                        <div>
+                            <label for="autoAcceptRadius" class="block text-xs text-gray-600 mb-0.5">Auto Accept Radius (m)</label>
+                            <input type="number" id="autoAcceptRadius" class="w-full p-1 text-xs border border-gray-300 rounded" placeholder="200" value="200">
+                        </div>
+                        
+                        <div>
+                            <label for="minClusterSize" class="block text-xs text-gray-600 mb-0.5">Minimum Cluster Size</label>
+                            <input type="number" id="minClusterSize" class="w-full p-1 text-xs border border-gray-300 rounded" placeholder="2" value="2" min="1">
+                        </div>
+                        
+                        <div>
+                            <label for="lookbackDays" class="block text-xs text-gray-600 mb-0.5">Lookback Days</label>
+                            <input type="number" id="lookbackDays" class="w-full p-1 text-xs border border-gray-300 rounded" placeholder="7" value="7" min="1">
+                        </div>
+                        
+                        <div>
+                            <label for="overlapMergeThreshold" class="block text-xs text-gray-600 mb-0.5">Overlap Merge Threshold (%)</label>
+                            <input type="number" id="overlapMergeThreshold" class="w-full p-1 text-xs border border-gray-300 rounded" placeholder="70" value="70" min="0" max="100">
+                        </div>
+                        
+                        <div>
+                            <label for="overlapRelatedThreshold" class="block text-xs text-gray-600 mb-0.5">Overlap Related Threshold (%)</label>
+                            <input type="number" id="overlapRelatedThreshold" class="w-full p-1 text-xs border border-gray-300 rounded" placeholder="30" value="30" min="0" max="100">
+                        </div>
+                    </div>
+                    
+                    <!-- Action Buttons -->
+                    <div class="flex space-x-2 mt-3">
+                        <button onclick="resetToDefaults()" class="flex-1 bg-gray-500 hover:bg-gray-600 text-white text-xs py-1.5 px-2 rounded transition-colors">Reset</button>
+                        <button onclick="submitParameters()" class="flex-1 bg-primary hover:bg-blue-600 text-white text-xs py-1.5 px-2 rounded transition-colors">Submit</button>
+                    </div>
+                </div>
+                
+                <!-- Column 2 -->
+                <div class="bg-white p-2 rounded shadow">
+                    <h3 class="text-sm font-semibold text-gray-800 mb-1">System Quality Assessment</h3>
+                    <p class="text-xs text-gray-600 mb-2">Comprehensive data validation and system health check</p>
+                    
+                    <button onclick="runQualityCheck()" id="qualityCheckBtn" class="w-full bg-orange-500 hover:bg-orange-600 text-white text-xs py-1.5 px-2 rounded transition-colors mb-2 flex items-center justify-center space-x-1">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <span>Run Quality Check</span>
+                    </button>
+                    
+                    <div id="qualityResults" class="text-xs space-y-1 hidden">
+                        <!-- Results will be populated here -->
+                    </div>
+                </div>
+                
+                <!-- Column 3 -->
+                <div class="bg-white p-2 rounded shadow">
+                    <h3 class="text-sm font-semibold text-gray-800 mb-1">System Operations</h3>
+                    <p class="text-xs text-gray-600 mb-2">Process management and monitoring</p>
+                    
+                    <div class="space-y-2">
+                        <button onclick="runProcessing()" id="processBtn" class="w-full bg-green-500 hover:bg-green-600 text-white text-xs py-1.5 px-2 rounded transition-colors flex items-center justify-center space-x-1">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h1m4 0h1m6-10V7a3 3 0 11-6 0V4a3 3 0 11-6 0v3a3 3 0 11-6 0v3"></path>
+                            </svg>
+                            <span>Start Processing</span>
+                        </button>
+                        
+                        <button onclick="checkStatus()" class="w-full bg-blue-500 hover:bg-blue-600 text-white text-xs py-1.5 px-2 rounded transition-colors flex items-center justify-center space-x-1">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                            </svg>
+                            <span>Check Status</span>
+                        </button>
+                        
+
+                    </div>
+                    
+                    <div id="operationResults" class="mt-3 text-xs hidden">
+                        <!-- Operation results will appear here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
