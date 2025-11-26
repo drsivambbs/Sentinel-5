@@ -34,10 +34,12 @@ def geocode_addresses(request):
     
     # Fetch records with null latitude/longitude (limit 100 per batch)
     query = f"""
-        SELECT unique_id, pat_street, pat_house, villagename, subdistrictname, districtname, statename, pat_pincode
+        SELECT unique_id, pat_street, pat_house, villagename, subdistrictname, 
+               districtname, statename, pat_pincode, pat_areatype
         FROM `{table_id}`
         WHERE (latitude IS NULL OR longitude IS NULL)
-        AND (pat_street IS NOT NULL OR pat_house IS NOT NULL OR villagename IS NOT NULL)
+        AND (pat_street IS NOT NULL OR pat_house IS NOT NULL OR villagename IS NOT NULL 
+             OR subdistrictname IS NOT NULL OR districtname IS NOT NULL OR statename IS NOT NULL)
         LIMIT 100
     """
     
@@ -53,7 +55,6 @@ def geocode_addresses(request):
         except Exception as e:
             if "streaming buffer" in str(e).lower():
                 return {"message": "Table has streaming buffer, skipping to avoid API waste"}, 200
-            # If it's not a streaming buffer error, continue
         
         # Geocode batch with persistent cache
         geocoded_batch = geocode_batch(df, api_key, bq_client)
@@ -77,11 +78,10 @@ def clean_address_line(pat_street, pat_house, villagename, subdistrictname, dist
     for part in [pat_house, pat_street, villagename, subdistrictname, districtname, statename, pat_pincode]:
         if part is not None and pd.notna(part) and str(part).strip():
             part = str(part).strip().strip('"')
-            # Keep letters, digits, spaces, comma, dot, hyphen
             part = re.sub(r'[^\w\s,.-]', '', part, flags=re.UNICODE)
             if part:
                 parts.append(part)
-    parts.append("India")  # bias geocoding to India
+    parts.append("India")
     return ", ".join(parts)
 
 
@@ -157,7 +157,7 @@ def geocode_batch(batch, api_key, bq_client):
                         })
                         new_cache_records.append({'full_address': addr, 'latitude': loc['lat'], 'longitude': loc['lng']})
                         break
-            time.sleep(0.05)  # rate limiting
+            time.sleep(0.05)
 
         except Exception as e:
             print(f"Error geocoding {row['unique_id']}: {str(e)}")
@@ -170,21 +170,33 @@ def geocode_batch(batch, api_key, bq_client):
 
 def update_records(bq_client, table_id, geocoded_records):
     """Update BigQuery table with geocoded latitude/longitude"""
-    if not geocoded_records:
-        return
 
-    lat_cases = " ".join([f"WHEN '{r['unique_id']}' THEN {r['latitude']}" for r in geocoded_records])
-    lng_cases = " ".join([f"WHEN '{r['unique_id']}' THEN {r['longitude']}" for r in geocoded_records])
-    unique_ids = [r['unique_id'] for r in geocoded_records]
+    # First update geocoded results
+    if geocoded_records:
+        lat_cases = " ".join([f"WHEN '{r['unique_id']}' THEN {r['latitude']}" for r in geocoded_records])
+        lng_cases = " ".join([f"WHEN '{r['unique_id']}' THEN {r['longitude']}" for r in geocoded_records])
+        unique_ids = [r['unique_id'] for r in geocoded_records]
 
-    update_query = f"""
+        update_query = f"""
+            UPDATE `{table_id}`
+            SET
+                latitude = CASE unique_id {lat_cases} ELSE latitude END,
+                longitude = CASE unique_id {lng_cases} ELSE longitude END
+            WHERE unique_id IN UNNEST(@unique_ids)
+        """
+
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ArrayQueryParameter("unique_ids", "STRING", unique_ids)]
+        )
+        bq_client.query(update_query, job_config=job_config).result()
+
+    # ----------------------------------------------------
+    # 🔥 NEW RULE: Any rural rows still having NULL → set 0
+    # ----------------------------------------------------
+    fallback_query = f"""
         UPDATE `{table_id}`
-        SET
-            latitude = CASE unique_id {lat_cases} ELSE latitude END,
-            longitude = CASE unique_id {lng_cases} ELSE longitude END
-        WHERE unique_id IN UNNEST(@unique_ids)
+        SET latitude = 0, longitude = 0
+        WHERE (latitude IS NULL OR longitude IS NULL)
+        AND pat_areatype = 'Rural'
     """
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[bigquery.ArrayQueryParameter("unique_ids", "STRING", unique_ids)]
-    )
-    bq_client.query(update_query, job_config=job_config).result()
+    bq_client.query(fallback_query).result()

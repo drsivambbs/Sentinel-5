@@ -3,6 +3,7 @@ from flask_cors import CORS
 from google.cloud import bigquery
 import os
 from datetime import datetime
+import requests
 
 app = Flask(__name__)
 CORS(app)
@@ -11,6 +12,12 @@ CORS(app)
 PROJECT_ID = os.getenv('PROJECT_ID', 'sentinel-h-5')
 DATASET_ID = os.getenv('DATASET_ID', 'sentinel_h_5')
 TABLE_ID = os.getenv('TABLE_ID', 'patient_records')
+
+# Column names
+PATIENT_ENTRY_DATE = 'patient_entry_date'
+LATITUDE = 'latitude'
+LONGITUDE = 'longitude'
+AREA_TYPE = 'pat_areatype'
 
 client = bigquery.Client(project=PROJECT_ID)
 
@@ -31,8 +38,12 @@ def get_dashboard_stats():
         query = f"""
         SELECT 
             COUNT(*) as total_cases,
-            COUNT(latitude) as geocoded_cases,
-            ROUND(COUNT(latitude) * 100.0 / COUNT(*), 1) as geocoded_percentage,
+            COUNT(CASE WHEN UPPER(pat_areatype) = 'URBAN' AND latitude IS NOT NULL THEN 1 END) as geocoded_cases,
+            CASE 
+                WHEN COUNT(CASE WHEN UPPER(pat_areatype) = 'URBAN' THEN 1 END) > 0 
+                THEN ROUND(COUNT(CASE WHEN UPPER(pat_areatype) = 'URBAN' AND latitude IS NOT NULL THEN 1 END) * 100.0 / COUNT(CASE WHEN UPPER(pat_areatype) = 'URBAN' THEN 1 END), 1)
+                ELSE 0
+            END as geocoded_percentage,
             COUNT(CASE WHEN UPPER(pat_areatype) = 'URBAN' THEN 1 END) as urban_cases,
             COUNT(CASE WHEN UPPER(pat_areatype) = 'RURAL' THEN 1 END) as rural_cases
         FROM `{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}`
@@ -62,6 +73,88 @@ def get_dashboard_stats():
                 'streaming_status': streaming_status,
                 'last_updated': datetime.now().isoformat()
             }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/geocoding/status', methods=['GET'])
+def get_geocoding_status():
+    try:
+        # Query for detailed geocoding statistics
+        query = f"""
+        WITH daily_stats AS (
+            SELECT 
+                DATE(patient_entry_date) as date,
+                COUNT(*) as total_patients,
+                COUNTIF(latitude IS NOT NULL AND longitude IS NOT NULL 
+                        AND latitude != 0 AND longitude != 0 
+                        AND UPPER(pat_areatype) = 'URBAN') as geocoded_urban,
+                COUNTIF(UPPER(pat_areatype) = 'URBAN') as total_urban,
+                CASE 
+                    WHEN COUNTIF(UPPER(pat_areatype) = 'URBAN') > 0 
+                    THEN COUNTIF(latitude IS NOT NULL AND longitude IS NOT NULL 
+                                 AND latitude != 0 AND longitude != 0 
+                                 AND UPPER(pat_areatype) = 'URBAN') / COUNTIF(UPPER(pat_areatype) = 'URBAN')
+                    ELSE 1.0 
+                END as geocoding_pct
+            FROM `{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}`
+            WHERE patient_entry_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 14 DAY)
+            GROUP BY 1
+        ),
+        overall_stats AS (
+            SELECT 
+                COUNT(*) as total_records,
+                COUNTIF(UPPER(pat_areatype) = 'URBAN') as total_urban,
+                COUNTIF(latitude IS NOT NULL AND longitude IS NOT NULL 
+                        AND latitude != 0 AND longitude != 0 
+                        AND UPPER(pat_areatype) = 'URBAN') as geocoded_urban,
+                ROUND(COUNTIF(latitude IS NOT NULL AND longitude IS NOT NULL 
+                              AND latitude != 0 AND longitude != 0 
+                              AND UPPER(pat_areatype) = 'URBAN') / COUNTIF(UPPER(pat_areatype) = 'URBAN') * 100, 2) as urban_geocoding_pct,
+                COUNTIF(latitude IS NOT NULL AND longitude IS NOT NULL 
+                        AND latitude != 0 AND longitude != 0) as total_geocoded,
+                ROUND(COUNTIF(latitude IS NOT NULL AND longitude IS NOT NULL 
+                              AND latitude != 0 AND longitude != 0) / COUNT(*) * 100, 2) as overall_geocoding_pct
+            FROM `{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}`
+        )
+        SELECT 
+            o.*,
+            COUNTIF(d.geocoding_pct >= 0.85) as days_ready,
+            COUNT(*) as total_days,
+            MIN(d.geocoding_pct) as min_daily_pct,
+            AVG(d.geocoding_pct) as avg_daily_pct
+        FROM overall_stats o
+        CROSS JOIN daily_stats d
+        GROUP BY o.total_records, o.total_urban, o.geocoded_urban, o.urban_geocoding_pct, o.total_geocoded, o.overall_geocoding_pct
+        """
+        
+        query_job = client.query(query)
+        results = query_job.result()
+        
+        for row in results:
+            geocoding_status = {
+                'total_records': row.total_records,
+                'total_urban': row.total_urban,
+                'geocoded_urban': row.geocoded_urban,
+                'urban_geocoding_pct': float(row.urban_geocoding_pct),
+                'total_geocoded': row.total_geocoded,
+                'overall_geocoding_pct': float(row.overall_geocoding_pct),
+                'days_ready': row.days_ready,
+                'total_days': row.total_days,
+                'min_daily_pct': float(row.min_daily_pct) * 100,
+                'avg_daily_pct': float(row.avg_daily_pct) * 100,
+                'clustering_ready': row.days_ready == row.total_days and row.urban_geocoding_pct >= 85.0,
+                'threshold': 85.0
+            }
+            break
+        
+        return jsonify({
+            'success': True,
+            'data': geocoding_status
         })
         
     except Exception as e:
@@ -251,15 +344,18 @@ def update_cluster_status():
             'message': f'Cluster {cluster_id} status updated to {status}'
         })
         
-    } except Exception as e:
+    except Exception as e:
         return jsonify({
             'success': False,
             'error': str(e)
         }), 500
+
+
 
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({'status': 'healthy'})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port, debug=False)

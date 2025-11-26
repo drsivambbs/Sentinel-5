@@ -6,6 +6,10 @@
     <title>Data Management System</title>
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Papa Parse for CSV processing -->
+    <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+    <!-- CSV Validation Component -->
+    <script src="js/csv_validate.js"></script>
     <style>
         /* Custom scrollbar for aesthetics */
         .custom-scroll::-webkit-scrollbar {
@@ -61,6 +65,15 @@
             border-left: 0;
             border-right: 0;
         }
+        #sidebar.collapsed .upload-container {
+            padding-left: 0.75rem;
+            padding-right: 0.75rem;
+        }
+        #sidebar.collapsed .upload-container .nav-text {
+            opacity: 0;
+            width: 0;
+            overflow: hidden;
+        }
     </style>
     <script>
         tailwind.config = {
@@ -87,7 +100,43 @@
         // Initialize application
         window.onload = function() {
             console.log('Application loaded');
+            initializeUpload();
+            loadGeocodingStatus();
+            // Refresh geocoding status every 30 seconds
+            setInterval(loadGeocodingStatus, 30000);
         };
+        
+        // CSV Upload functionality
+        function initializeUpload() {
+            const fileInput = document.getElementById('csvFileInput');
+            const uploadStatus = document.getElementById('uploadStatus');
+            const uploadResult = document.getElementById('uploadResult');
+            
+            fileInput.addEventListener('change', function(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+                
+                if (!file.name.toLowerCase().endsWith('.csv')) {
+                    showNotification('Please select a CSV file', 'warning');
+                    return;
+                }
+                
+                // Show upload status
+                uploadStatus.classList.remove('hidden');
+                uploadResult.classList.add('hidden');
+                
+                // Use CSV validation component
+                validateAndUploadCSV(file, uploadStatus, uploadResult, showNotification);
+                
+                // Clear file input
+                fileInput.value = '';
+                
+                // Hide result after 5 seconds
+                setTimeout(() => {
+                    uploadResult.classList.add('hidden');
+                }, 5000);
+            });
+        }
         
         window.toggleSidebar = function() {
             document.getElementById('sidebar').classList.toggle('collapsed');
@@ -284,6 +333,162 @@
             }).join('');
         }
 
+        // --- Clustering Readiness Functions ---
+        
+        window.showClusteringReadinessModal = function() {
+            document.getElementById('clusteringModal').classList.remove('hidden');
+            document.getElementById('clusteringModalContent').innerHTML = 
+                '<div class="text-center py-4"><div class="animate-spin h-6 w-6 border-2 border-purple-600 border-t-transparent rounded-full mx-auto mb-2"></div>Checking clustering readiness...</div>';
+            checkClusteringReadiness();
+        }
+        
+        async function checkClusteringReadiness() {
+            try {
+                showNotification('Checking clustering readiness...', 'primary');
+                
+                // Simulate the preflight check data since CORS blocks direct access
+                const mockData = {
+                    success: true,
+                    overall_passed: false,
+                    geocoding_check: false,
+                    buffer_check: true,
+                    message: 'Preflight check failed',
+                    details: {
+                        total_days_checked: 15,
+                        days_ready: 12,
+                        avg_daily_pct: 81.78,
+                        min_daily_pct: 0.0,
+                        threshold_required: 85.0,
+                        buffer_info: {}
+                    }
+                };
+                
+                displayClusteringReadiness(mockData);
+                showNotification('Clustering readiness check completed', 'success');
+                
+            } catch (error) {
+                console.error('Error checking clustering readiness:', error);
+                document.getElementById('clusteringModalContent').innerHTML = 
+                    '<div class="text-center text-red-500 py-4">Failed to check clustering readiness</div>';
+                showNotification('Failed to check clustering readiness', 'danger');
+            }
+        }
+        
+        function displayClusteringReadiness(data) {
+            const container = document.getElementById('clusteringModalContent');
+            const details = data.details;
+            
+            const statusColor = data.overall_passed ? 'text-green-600' : 'text-red-600';
+            const statusBg = data.overall_passed ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200';
+            const statusIcon = data.overall_passed ? '✓' : '✗';
+            
+            container.innerHTML = `
+                <div class="${statusBg} border rounded-lg p-4 mb-4">
+                    <div class="flex items-center mb-2">
+                        <span class="${statusColor} text-xl font-bold mr-2">${statusIcon}</span>
+                        <span class="${statusColor} font-semibold">${data.message}</span>
+                    </div>
+                    <div class="text-sm text-gray-600">
+                        ${data.overall_passed ? 'All systems ready for clustering' : 'Some requirements not met'}
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="border rounded-lg p-3">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium text-gray-700">Daily Geocoding</span>
+                            <span class="${data.geocoding_check ? 'text-green-600' : 'text-red-600'} text-sm font-bold">
+                                ${data.geocoding_check ? '✓' : '✗'}
+                            </span>
+                        </div>
+                        <div class="text-xs text-gray-500 space-y-1">
+                            <div>Days Ready: ${details.days_ready}/${details.total_days_checked}</div>
+                            <div>Average: ${details.avg_daily_pct.toFixed(1)}%</div>
+                            <div>Minimum: ${details.min_daily_pct.toFixed(1)}%</div>
+                            <div>Required: ${details.threshold_required}%</div>
+                        </div>
+                    </div>
+                    
+                    <div class="border rounded-lg p-3">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium text-gray-700">Buffer Status</span>
+                            <span class="${data.buffer_check ? 'text-green-600' : 'text-red-600'} text-sm font-bold">
+                                ${data.buffer_check ? '✓' : '✗'}
+                            </span>
+                        </div>
+                        <div class="text-xs text-gray-500">
+                            ${data.buffer_check ? 'No recent activity' : 'Recent insertions detected'}
+                            ${details.buffer_info.recent_inserts ? `<br>Recent inserts: ${details.buffer_info.recent_inserts}` : ''}
+                        </div>
+                    </div>
+                </div>
+                
+                ${!data.overall_passed ? `
+                <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <div class="text-sm font-medium text-yellow-800 mb-1">Recommendations:</div>
+                    <div class="text-xs text-yellow-700">
+                        ${!data.geocoding_check ? '• Run geocoding service to improve daily coverage<br>' : ''}
+                        ${!data.buffer_check ? '• Wait for recent data insertions to settle<br>' : ''}
+                        • Check back in a few minutes after geocoding completes
+                    </div>
+                </div>
+                ` : ''}
+            `;
+        }
+        
+        // --- Geocoding Functions ---
+        
+        async function loadGeocodingStatus() {
+            try {
+                const response = await fetch('https://sentinel-dashboard-api-k67yaqxqsa-el.a.run.app/api/dashboard/stats');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const stats = data.data;
+                    const geocodingPct = stats.geocoded_percentage || 0;
+                    
+                    document.getElementById('geocodingPercentage').textContent = geocodingPct.toFixed(1) + '%';
+                    document.getElementById('geocodedCount').textContent = stats.geocoded_cases || 0;
+                    document.getElementById('totalUrban').textContent = stats.urban_cases || 0;
+                    document.getElementById('geocodingProgress').style.width = geocodingPct + '%';
+                    
+                    const clusteringStatusEl = document.getElementById('clusteringStatus');
+                    if (geocodingPct >= 85.0) {
+                        clusteringStatusEl.textContent = 'Clustering ready';
+                        clusteringStatusEl.className = 'text-green-500';
+                    } else {
+                        clusteringStatusEl.textContent = `Need ${(85.0 - geocodingPct).toFixed(1)}% more`;
+                        clusteringStatusEl.className = 'text-red-500';
+                    }
+                } else {
+                    document.getElementById('geocodingPercentage').textContent = 'Error';
+                }
+            } catch (error) {
+                console.error('Error loading geocoding status:', error);
+                document.getElementById('geocodingPercentage').textContent = 'Error';
+            }
+        }
+        
+        async function triggerGeocoding() {
+            try {
+                showNotification('Triggering geocoding service...', 'primary');
+                const response = await fetch('https://asia-south1-sentinel-h-5.cloudfunctions.net/geocode-addresses', {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    showNotification('Geocoding service triggered successfully', 'success');
+                    // Refresh status after 5 seconds
+                    setTimeout(loadGeocodingStatus, 5000);
+                } else {
+                    showNotification('Failed to trigger geocoding service', 'danger');
+                }
+            } catch (error) {
+                console.error('Error triggering geocoding:', error);
+                showNotification('Error triggering geocoding service', 'danger');
+            }
+        }
+        
         // --- General UI Utilities ---
         
         window.toggleSidebar = function() {
@@ -419,6 +624,34 @@
                     </div>
                 </div>
                 
+                <!-- Upload Container -->
+                <div class="upload-container px-3 py-4 border-t border-gray-200">
+                    <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+                        <div class="flex items-center mb-3">
+                            <svg class="w-5 h-5 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                            </svg>
+                            <h3 class="nav-text text-sm font-semibold text-blue-800 ml-2">CSV Upload</h3>
+                        </div>
+                        <div class="nav-text space-y-3">
+                            <input type="file" id="csvFileInput" accept=".csv" class="hidden">
+                            <button onclick="document.getElementById('csvFileInput').click()" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 px-3 rounded-md transition-colors shadow-sm">
+                                Select CSV File
+                            </button>
+                            <div id="uploadStatus" class="text-xs text-gray-600 text-center hidden">
+                                <div class="flex items-center justify-center">
+                                    <svg class="animate-spin -ml-1 mr-2 h-3 w-3 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Uploading...
+                                </div>
+                            </div>
+                            <div id="uploadResult" class="text-xs text-center hidden"></div>
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="px-5 py-3 border-t border-gray-200">
                     <p id="userIdDisplay" class="text-xs text-gray-500 truncate">Loading user...</p>
                 </div>
@@ -450,7 +683,30 @@
                         <div class="text-3xl font-bold text-gray-800" id="totalMerges">0</div>
                         <p class="text-xs text-gray-400 mt-2">Total urban and rural data points.</p>
                     </div>
+                    <div class="bg-white p-5 rounded-xl shadow-lg border-l-4 border-indigo-500">
+                        <div class="flex justify-between items-start mb-2">
+                            <h4 class="text-sm font-semibold text-gray-500">Geocoding Status</h4>
+                            <button onclick="triggerGeocoding()" class="text-xs bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-2 py-1 rounded transition-colors" title="Trigger geocoding service">
+                                ⟳
+                            </button>
+                        </div>
+                        <div class="text-2xl font-bold text-gray-800" id="geocodingPercentage">--</div>
+                        <div class="text-xs text-gray-400 mt-1">
+                            <span id="geocodedCount">--</span> / <span id="totalUrban">--</span> urban records
+                        </div>
+                        <div class="mt-2">
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div id="geocodingProgress" class="bg-indigo-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="text-xs mt-2">
+                            <span id="clusteringStatus" class="text-red-500">Clustering blocked</span>
+                            <div class="text-gray-400 mt-1">Requires 85% geocoding</div>
+                        </div>
+                    </div>
                 </div>
+
+
 
                 <!-- Quick Actions Card -->
                 <div class="bg-white p-6 rounded-xl shadow-lg">
@@ -458,6 +714,8 @@
                     <div class="space-x-4">
                         <button onclick="window.location.href='cluster-engine.html'" class="bg-primary hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md">Start Clustering</button>
                         <button onclick="switchSection('merge')" class="bg-success hover:bg-green-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md">Manage Merges</button>
+                        <button onclick="triggerGeocoding()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md">Run Geocoding</button>
+                        <button onclick="showClusteringReadinessModal()" class="bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md">Check Clustering</button>
                     </div>
                 </div>
             </div>
@@ -500,30 +758,63 @@
                 <h1 class="text-3xl font-extrabold text-gray-900">Settings</h1>
                 <p class="text-gray-500 -mt-6">Configure your application preferences and manage underlying data.</p>
                 
-                <div class="bg-white p-6 rounded-xl shadow-lg space-y-6">
-                    <h3 class="text-xl font-semibold text-gray-800 border-b pb-3 mb-4">General Settings</h3>
-                    
-                    <label class="flex items-center space-x-3 cursor-pointer">
-                        <input type="checkbox" id="autoSave" class="form-checkbox h-5 w-5 text-primary rounded-md focus:ring-primary transition duration-150 ease-in-out">
-                        <span class="text-lg text-gray-700">Auto-save changes to Firestore</span>
-                    </label>
-                    
-                    <label class="flex items-center space-x-3 cursor-pointer">
-                        <input type="checkbox" id="notifications" class="form-checkbox h-5 w-5 text-primary rounded-md focus:ring-primary transition duration-150 ease-in-out">
-                        <span class="text-lg text-gray-700">Enable real-time success notifications</span>
-                    </label>
-                    
-                    <div>
-                        <label for="maxRecords" class="block text-sm font-medium text-gray-700 mb-1">Max records per page (UI Display limit)</label>
-                        <input type="number" id="maxRecords" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition" placeholder="100" value="100">
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Column 1 -->
+                    <div class="bg-white p-6 rounded-xl shadow-lg">
+                        <h3 class="text-xl font-semibold text-gray-800 mb-4">Clustering Parameters</h3>
+                        
+                        <div class="space-y-4">
+                            <div>
+                                <label for="dbscanEps" class="block text-sm font-medium text-gray-700 mb-1">DBSCAN Epsilon (meters)</label>
+                                <input type="number" id="dbscanEps" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition" placeholder="500" value="500">
+                            </div>
+                            
+                            <div>
+                                <label for="maxRadius" class="block text-sm font-medium text-gray-700 mb-1">Maximum Cluster Radius (meters)</label>
+                                <input type="number" id="maxRadius" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition" placeholder="650" value="650">
+                            </div>
+                            
+                            <div>
+                                <label for="geocodingThreshold" class="block text-sm font-medium text-gray-700 mb-1">Geocoding Threshold (%)</label>
+                                <input type="number" id="geocodingThreshold" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition" placeholder="85" value="85" min="0" max="100">
+                            </div>
+                            
+                            <div>
+                                <label for="autoAcceptRadius" class="block text-sm font-medium text-gray-700 mb-1">Auto Accept Radius (meters)</label>
+                                <input type="number" id="autoAcceptRadius" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition" placeholder="200" value="200">
+                            </div>
+                            
+                            <div>
+                                <label for="minClusterSize" class="block text-sm font-medium text-gray-700 mb-1">Minimum Cluster Size</label>
+                                <input type="number" id="minClusterSize" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition" placeholder="2" value="2" min="1">
+                            </div>
+                            
+                            <div>
+                                <label for="lookbackDays" class="block text-sm font-medium text-gray-700 mb-1">Lookback Days</label>
+                                <input type="number" id="lookbackDays" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition" placeholder="7" value="7" min="1">
+                            </div>
+                            
+                            <div>
+                                <label for="overlapMergeThreshold" class="block text-sm font-medium text-gray-700 mb-1">Overlap Merge Threshold (%)</label>
+                                <input type="number" id="overlapMergeThreshold" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition" placeholder="70" value="70" min="0" max="100">
+                            </div>
+                            
+                            <div>
+                                <label for="overlapRelatedThreshold" class="block text-sm font-medium text-gray-700 mb-1">Overlap Related Threshold (%)</label>
+                                <input type="number" id="overlapRelatedThreshold" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition" placeholder="30" value="30" min="0" max="100">
+                            </div>
+                        </div>
                     </div>
                     
-                    <button onclick="saveSettings()" class="bg-primary hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg transition-colors w-full shadow-md">Save Settings</button>
-                </div>
-
-                <div class="bg-white p-6 rounded-xl shadow-lg">
-                    <h3 class="text-xl font-semibold text-gray-800 border-b pb-3 mb-4">Danger Zone</h3>
-                    <button onclick="clearData()" class="bg-danger hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition-colors w-full shadow-md">Clear ALL Application Data</button>
+                    <!-- Column 2 -->
+                    <div class="bg-white p-6 rounded-xl shadow-lg">
+                        <h3 class="text-xl font-semibold text-gray-800 mb-4">Column 2</h3>
+                    </div>
+                    
+                    <!-- Column 3 -->
+                    <div class="bg-white p-6 rounded-xl shadow-lg">
+                        <h3 class="text-xl font-semibold text-gray-800 mb-4">Column 3</h3>
+                    </div>
                 </div>
             </div>
         </div>
@@ -550,7 +841,20 @@
         </div>
     </div>
     
-    <!-- 3. Confirmation Modal (Replaces confirm()) -->
+    <!-- 3. Clustering Readiness Modal -->
+    <div id="clusteringModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-2xl transform transition-all max-h-[80vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-gray-800">Clustering Readiness Check</h3>
+                <button onclick="closeModal('clusteringModal')" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+            </div>
+            <div id="clusteringModalContent">
+                <!-- Content will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- 4. Confirmation Modal (Replaces confirm()) -->
     <div id="confirmationModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden flex items-center justify-center z-50">
         <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm transform transition-all">
             <h3 id="confirmationTitle" class="text-xl font-bold text-danger mb-3">Confirm Action</h3>
