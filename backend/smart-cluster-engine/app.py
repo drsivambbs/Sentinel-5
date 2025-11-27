@@ -899,15 +899,18 @@ def index():
         'version': '1.0.0',
         'status': 'running',
         'endpoints': {
-            'smart-process': '/smart-process (POST)',
-            'smart-status': '/smart-status (GET)',
-            'smart-config': '/smart-config (GET)'
+            'health': '/health (GET) - Health check and system status',
+            'smart-process': '/smart-process (POST) - Process next date',
+            'smart-preflight': '/smart-preflight (GET/POST) - Data quality check and test',
+            'smart-config': '/smart-config (GET/POST) - Configuration management',
+            'smart-clusters': '/smart-clusters (GET) - Get clusters',
+            'smart-cluster-patients': '/smart-cluster-patients (GET) - Get cluster patients'
         }
     })
 
 @app.route('/health', methods=['GET'])
 def health():
-    """Enhanced health check with system metrics"""
+    """Combined health check and system status"""
     try:
         # Test BigQuery connection
         client.query("SELECT 1").result()
@@ -929,14 +932,48 @@ def health():
         except:
             status_summary = {}
         
+        # Get clustering statistics
+        cluster_query = f"""
+        SELECT 
+            COUNT(DISTINCT input_date) as dates_processed,
+            MAX(input_date) as last_processed_date,
+            COUNT(*) as total_clusters,
+            COUNTIF(algorithm_type = 'ABC') as abc_clusters,
+            COUNTIF(algorithm_type = 'GIS') as gis_clusters,
+            COUNTIF(algorithm_type = 'GIS' AND accept_status = 'Accepted') as gis_accepted,
+            COUNTIF(algorithm_type = 'GIS' AND accept_status = 'Pending') as gis_pending,
+            SUM(expansion_count) as total_expansions,
+            SUM(patient_count) as total_patients
+        FROM `{SMART_CLUSTERS_TABLE}`
+        """
+        
+        try:
+            cluster_df = client.query(cluster_query).to_dataframe()
+            cluster_stats = {
+                'dates_processed': int(cluster_df.dates_processed[0]) if len(cluster_df) > 0 else 0,
+                'last_processed_date': cluster_df.last_processed_date[0].isoformat() if len(cluster_df) > 0 and pd.notna(cluster_df.last_processed_date[0]) else None,
+                'total_clusters': int(cluster_df.total_clusters[0]) if len(cluster_df) > 0 else 0,
+                'abc_clusters': int(cluster_df.abc_clusters[0]) if len(cluster_df) > 0 else 0,
+                'gis_clusters': int(cluster_df.gis_clusters[0]) if len(cluster_df) > 0 else 0,
+                'gis_accepted': int(cluster_df.gis_accepted[0]) if len(cluster_df) > 0 else 0,
+                'gis_pending': int(cluster_df.gis_pending[0]) if len(cluster_df) > 0 else 0,
+                'total_expansions': int(cluster_df.total_expansions[0]) if len(cluster_df) > 0 else 0,
+                'total_patients': int(cluster_df.total_patients[0]) if len(cluster_df) > 0 else 0
+            }
+        except:
+            cluster_stats = {}
+        
         return jsonify({
             'status': 'healthy',
             'bigquery': 'connected',
             'last_24h_processing': status_summary,
+            'clustering_stats': cluster_stats,
             'config': {
                 'max_cluster_age_days': MAX_CLUSTER_AGE_DAYS,
                 'max_cluster_radius': MAX_CLUSTER_RADIUS,
-                'min_cluster_size': MIN_CLUSTER_SIZE
+                'min_cluster_size': MIN_CLUSTER_SIZE,
+                'dbscan_epsilon_m': DBSCAN_EPSILON_M,
+                'auto_accept_radius_m': AUTO_ACCEPT_RADIUS_THRESHOLD
             },
             'timestamp': datetime.now(timezone.utc).isoformat()
         })
@@ -1014,50 +1051,11 @@ def smart_process():
             'error': str(e)
         }), 500
 
-@app.route('/smart-status', methods=['GET'])
-def smart_status():
-    """Get smart clustering status"""
-    try:
-        query = f"""
-        SELECT 
-            COUNT(DISTINCT input_date) as dates_processed,
-            MAX(input_date) as last_processed_date,
-            COUNT(*) as total_clusters,
-            COUNTIF(algorithm_type = 'ABC') as abc_clusters,
-            COUNTIF(algorithm_type = 'GIS') as gis_clusters,
-            COUNTIF(algorithm_type = 'GIS' AND accept_status = 'Accepted') as gis_accepted,
-            COUNTIF(algorithm_type = 'GIS' AND accept_status = 'Pending') as gis_pending,
-            SUM(expansion_count) as total_expansions,
-            SUM(patient_count) as total_patients
-        FROM `{SMART_CLUSTERS_TABLE}`
-        """
-        df = client.query(query).to_dataframe()
-        
-        return jsonify({
-            'dates_processed': int(df.dates_processed[0]) if len(df) > 0 else 0,
-            'last_processed_date': df.last_processed_date[0].isoformat() if len(df) > 0 and pd.notna(df.last_processed_date[0]) else None,
-            'total_clusters': int(df.total_clusters[0]) if len(df) > 0 else 0,
-            'abc_clusters': int(df.abc_clusters[0]) if len(df) > 0 else 0,
-            'gis_clusters': int(df.gis_clusters[0]) if len(df) > 0 else 0,
-            'gis_accepted': int(df.gis_accepted[0]) if len(df) > 0 else 0,
-            'gis_pending': int(df.gis_pending[0]) if len(df) > 0 else 0,
-            'total_expansions': int(df.total_expansions[0]) if len(df) > 0 else 0,
-            'total_patients': int(df.total_patients[0]) if len(df) > 0 else 0,
-            'cluster_limits': {
-                'max_cluster_age_days': MAX_CLUSTER_AGE_DAYS,
-                'dbscan_epsilon_m': DBSCAN_EPSILON_M,
-                'max_cluster_radius_m': MAX_CLUSTER_RADIUS,
-                'min_cluster_size': MIN_CLUSTER_SIZE,
-                'auto_accept_radius_m': AUTO_ACCEPT_RADIUS_THRESHOLD
-            },
-            'timestamp': datetime.now(timezone.utc).isoformat()
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
-@app.route('/smart-preflight', methods=['GET'])
+
+@app.route('/smart-preflight', methods=['GET', 'POST'])
 def smart_preflight():
-    """Standalone data quality check with pending clusters validation"""
+    """Combined data quality check and test clustering"""
     try:
         # Check for pending clusters
         pending_query = f"""
@@ -1111,46 +1109,7 @@ def smart_preflight():
             'data_quality_passed': quality_passed,
             'pending_clusters': pending_count,
             'geocoding_threshold': GEOCODING_THRESHOLD * 100,
-            'message': 'Preflight check completed'
-        })
-        
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/smart-test', methods=['POST'])
-def smart_test():
-    """Test clustering without writing to BigQuery"""
-    try:
-        query = f"""
-        WITH source_dates AS (
-            SELECT DISTINCT {PATIENT_ENTRY_DATE} as date
-            FROM `{SOURCE_TABLE}`
-        ),
-        processed_dates AS (
-            SELECT DISTINCT date
-            FROM `{PROJECT_ID}.{DATASET_ID}.smart_processing_status`
-            WHERE status IN ('IN_PROGRESS', 'COMPLETED')
-        )
-        SELECT s.date
-        FROM source_dates s
-        LEFT JOIN processed_dates p ON s.date = p.date
-        WHERE p.date IS NULL
-        ORDER BY s.date ASC
-        LIMIT 1
-        """
-        
-        df = client.query(query).to_dataframe()
-        if len(df) == 0:
-            return jsonify({'success': False, 'message': 'No unprocessed dates available for testing'})
-        
-        test_date = df.date[0].strftime('%Y-%m-%d')
-        quality_passed = check_data_quality(test_date)
-        
-        return jsonify({
-            'success': True,
-            'test_date': test_date,
-            'data_quality_passed': quality_passed,
-            'message': 'Test completed successfully'
+            'message': 'Preflight check and test completed'
         })
         
     except Exception as e:
@@ -1169,13 +1128,7 @@ def smart_init():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/smart-cluster', methods=['POST'])
-def smart_cluster():
-    """Process single date with smart clustering"""
-    try:
-        return smart_process()
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @app.route('/smart-batch', methods=['POST'])
 def smart_batch():
