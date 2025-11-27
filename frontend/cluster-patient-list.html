@@ -76,6 +76,23 @@
                 if (clusterIdFromUrl) {
                     // Set the dropdown to the cluster from URL
                     document.getElementById('clusterSelect').value = clusterIdFromUrl;
+                    
+                    const cluster = allClusters.find(c => c.smart_cluster_id === clusterIdFromUrl);
+                    const mapBtn = document.getElementById('showMapBtn');
+                    const acceptBtn = document.getElementById('acceptBtn');
+                    const rejectBtn = document.getElementById('rejectBtn');
+                    
+                    // Show map button if it's a GIS cluster
+                    if (cluster && cluster.algorithm_type === 'GIS') {
+                        mapBtn.classList.remove('hidden');
+                    }
+                    
+                    // Show accept/reject buttons for pending clusters
+                    if (cluster && cluster.accept_status === 'Pending') {
+                        acceptBtn.classList.remove('hidden');
+                        rejectBtn.classList.remove('hidden');
+                    }
+                    
                     loadClusterPatients(clusterIdFromUrl);
                 }
             });
@@ -84,7 +101,18 @@
         // --- Data Loading ---
         async function loadClusters() {
             try {
-                const response = await fetch(`${SMART_CLUSTER_API}/smart-clusters`);
+                const response = await fetch(`${SMART_CLUSTER_API}/smart-clusters`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    mode: 'cors'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const data = await response.json();
                 
                 if (data.success) {
@@ -158,8 +186,20 @@
             try {
                 showNotification('Loading patients...', 'primary');
                 
-                const response = await fetch(`${SMART_CLUSTER_API}/smart-cluster-patients?cluster_id=${clusterId}`);
+                const response = await fetch(`${SMART_CLUSTER_API}/smart-cluster-patients?cluster_id=${encodeURIComponent(clusterId)}`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    mode: 'cors'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const data = await response.json();
+                console.log('API Response:', data);
                 
                 if (data.success) {
                     const cluster = allClusters.find(c => c.smart_cluster_id === clusterId);
@@ -186,9 +226,34 @@
 
         window.onClusterChange = function() {
             const clusterId = document.getElementById('clusterSelect').value;
+            const mapBtn = document.getElementById('showMapBtn');
+            const acceptBtn = document.getElementById('acceptBtn');
+            const rejectBtn = document.getElementById('rejectBtn');
+            
             if (clusterId) {
+                const cluster = allClusters.find(c => c.smart_cluster_id === clusterId);
+                
+                // Show map button for GIS clusters
+                if (cluster && cluster.algorithm_type === 'GIS') {
+                    mapBtn.classList.remove('hidden');
+                } else {
+                    mapBtn.classList.add('hidden');
+                }
+                
+                // Show accept/reject buttons for pending clusters
+                if (cluster && cluster.accept_status === 'Pending') {
+                    acceptBtn.classList.remove('hidden');
+                    rejectBtn.classList.remove('hidden');
+                } else {
+                    acceptBtn.classList.add('hidden');
+                    rejectBtn.classList.add('hidden');
+                }
+                
                 loadClusterPatients(clusterId);
             } else {
+                mapBtn.classList.add('hidden');
+                acceptBtn.classList.add('hidden');
+                rejectBtn.classList.add('hidden');
                 loadAllPatients();
             }
         }
@@ -345,8 +410,86 @@
 
         // --- Utility Functions ---
         window.goBack = function() {
-            window.location.href = 'index.html';
+            window.location.href = 'clusters-view.html';
         }
+
+        window.showMap = function() {
+            const clusterId = document.getElementById('clusterSelect').value;
+            if (!clusterId) {
+                showNotification('Please select a cluster first', 'warning');
+                return;
+            }
+            
+            const cluster = allClusters.find(c => c.smart_cluster_id === clusterId);
+            if (!cluster || cluster.algorithm_type !== 'GIS') {
+                showNotification('Map is only available for GIS clusters', 'warning');
+                return;
+            }
+            
+            window.location.href = `cluster-map.html?cluster_id=${clusterId}`;
+        }
+
+        window.acceptCluster = async function() {
+            const clusterId = document.getElementById('clusterSelect').value;
+            if (!clusterId) return;
+            
+            try {
+                showNotification('Accepting cluster...', 'primary');
+                const response = await fetch(`${SMART_CLUSTER_API}/accept-cluster`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    mode: 'cors',
+                    body: JSON.stringify({ cluster_id: clusterId })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                if (data.success) {
+                    showNotification('Cluster accepted', 'success');
+                    // Hide buttons and update cluster status
+                    document.getElementById('acceptBtn').classList.add('hidden');
+                    document.getElementById('rejectBtn').classList.add('hidden');
+                } else {
+                    throw new Error(data.error || 'Accept failed');
+                }
+            } catch (error) {
+                showNotification('Error accepting cluster: ' + error.message, 'danger');
+            }
+        }
+
+        window.rejectCluster = async function() {
+            const clusterId = document.getElementById('clusterSelect').value;
+            if (!clusterId || !confirm('Reject this cluster? This will delete it permanently.')) return;
+            
+            try {
+                showNotification('Rejecting cluster...', 'primary');
+                const response = await fetch(`${SMART_CLUSTER_API}/reject-cluster`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    mode: 'cors',
+                    body: JSON.stringify({ cluster_id: clusterId })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                if (data.success) {
+                    showNotification('Cluster rejected', 'success');
+                    window.location.href = 'clusters-view.html';
+                } else {
+                    throw new Error(data.error || 'Reject failed');
+                }
+            } catch (error) {
+                showNotification('Error rejecting cluster: ' + error.message, 'danger');
+            }
+        }
+
+
 
         window.showNotification = function(message, type = 'primary') {
             const container = document.getElementById('notificationContainer');
@@ -373,6 +516,8 @@
     <div id="notificationContainer" class="fixed bottom-4 right-4 z-50 max-w-sm">
         <!-- Notifications will appear here -->
     </div>
+
+
 
     <!-- Main Container -->
     <div class="flex flex-col h-screen">
@@ -413,6 +558,18 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                     </svg>
                     <span>Refresh</span>
+                </button>
+                <button id="showMapBtn" onclick="showMap()" class="hidden flex items-center space-x-0.5 bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded transition-colors text-xs whitespace-nowrap">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
+                    </svg>
+                    <span>Show Map</span>
+                </button>
+                <button id="acceptBtn" onclick="acceptCluster()" class="hidden flex items-center space-x-0.5 bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded transition-colors text-xs whitespace-nowrap">
+                    <span>✓ Accept</span>
+                </button>
+                <button id="rejectBtn" onclick="rejectCluster()" class="hidden flex items-center space-x-0.5 bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded transition-colors text-xs whitespace-nowrap">
+                    <span>✗ Reject</span>
                 </button>
             </div>
             <div class="flex items-center">

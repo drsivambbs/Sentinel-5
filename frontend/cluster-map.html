@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentinel-5 | Cluster Map</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 font-sans antialiased">
+    <script>
+        const SMART_CLUSTER_API = 'https://smart-cluster-engine-196547645490.asia-south1.run.app';
+        let clusterId = '';
+
+        window.onload = function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            clusterId = urlParams.get('cluster_id');
+            
+            if (!clusterId) {
+                alert('No cluster ID provided');
+                goBack();
+                return;
+            }
+            
+            document.getElementById('clusterTitle').textContent = clusterId;
+            loadMapData();
+        };
+
+        async function loadMapData() {
+            try {
+                // Get API key and patient data
+                const [keyResponse, patientsResponse] = await Promise.all([
+                    fetch(`${SMART_CLUSTER_API}/maps-api-key`),
+                    fetch(`${SMART_CLUSTER_API}/smart-cluster-patients?cluster_id=${clusterId}`)
+                ]);
+
+                const keyData = await keyResponse.json();
+                const patientsData = await patientsResponse.json();
+
+                if (!keyData.success || !patientsData.success) {
+                    throw new Error('Failed to load data');
+                }
+
+                // Load Google Maps
+                const script = document.createElement('script');
+                script.src = `https://maps.googleapis.com/maps/api/js?key=${keyData.api_key}&libraries=geometry&callback=initMap`;
+                script.async = true;
+                window.initMap = () => createMap(patientsData.patients);
+                document.head.appendChild(script);
+
+            } catch (error) {
+                document.getElementById('map').innerHTML = `<div class="flex items-center justify-center h-full text-red-500">Error: ${error.message}</div>`;
+            }
+        }
+
+        function createMap(patients) {
+            const patientsWithCoords = patients.filter(p => p.latitude && p.longitude);
+            
+            if (patientsWithCoords.length === 0) {
+                document.getElementById('map').innerHTML = '<div class="flex items-center justify-center h-full text-gray-500">No patient coordinates available</div>';
+                return;
+            }
+
+            const bounds = new google.maps.LatLngBounds();
+            const map = new google.maps.Map(document.getElementById('map'), {
+                zoom: 13,
+                mapTypeId: 'roadmap'
+            });
+
+            // Calculate cluster center and radius
+            let centerLat = 0, centerLng = 0;
+            patientsWithCoords.forEach(patient => {
+                centerLat += parseFloat(patient.latitude);
+                centerLng += parseFloat(patient.longitude);
+            });
+            centerLat /= patientsWithCoords.length;
+            centerLng /= patientsWithCoords.length;
+
+            // Calculate radius (max distance from center)
+            let maxDistance = 0;
+            patientsWithCoords.forEach(patient => {
+                const distance = google.maps.geometry.spherical.computeDistanceBetween(
+                    new google.maps.LatLng(centerLat, centerLng),
+                    new google.maps.LatLng(parseFloat(patient.latitude), parseFloat(patient.longitude))
+                );
+                maxDistance = Math.max(maxDistance, distance);
+            });
+
+            // Draw cluster circle
+            new google.maps.Circle({
+                strokeColor: '#0000FF',
+                strokeOpacity: 0.8,
+                strokeWeight: 2,
+                fillColor: '#0000FF',
+                fillOpacity: 0.1,
+                map: map,
+                center: { lat: centerLat, lng: centerLng },
+                radius: maxDistance + 50
+            });
+
+            const infoWindow = new google.maps.InfoWindow();
+
+            patientsWithCoords.forEach(patient => {
+                const position = { lat: parseFloat(patient.latitude), lng: parseFloat(patient.longitude) };
+                bounds.extend(position);
+
+                const isOriginal = patient.addition_type === 'ORIGINAL';
+                const color = isOriginal ? '#FF0000' : '#00FF00';
+
+                const marker = new google.maps.Marker({
+                    position: position,
+                    map: map,
+                    title: `${patient.patient_name || 'Patient'} (${patient.unique_id}) - ${patient.addition_type}`,
+                    icon: {
+                        path: 'M -2,-2 2,-2 2,2 -2,2 z',
+                        strokeColor: color,
+                        strokeWeight: 2,
+                        fillColor: color,
+                        fillOpacity: 0.8,
+                        scale: 4
+                    }
+                });
+
+                const content = `
+                    <div class="p-2">
+                        <h3 class="font-bold">${patient.patient_name || 'Patient'}</h3>
+                        <p><strong>ID:</strong> ${patient.unique_id}</p>
+                        <p><strong>Age:</strong> ${patient.pat_age || 'N/A'}</p>
+                        <p><strong>Sex:</strong> ${patient.pat_sex || 'N/A'}</p>
+                        <p><strong>Type:</strong> <span class="px-1 rounded text-xs ${isOriginal ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}">${patient.addition_type}</span></p>
+                        <p><strong>Village:</strong> ${patient.villagename || 'N/A'}</p>
+                    </div>
+                `;
+
+                marker.addListener('mouseover', () => {
+                    infoWindow.setContent(content);
+                    infoWindow.open(map, marker);
+                });
+
+                marker.addListener('mouseout', () => {
+                    infoWindow.close();
+                });
+            });
+
+            map.fitBounds(bounds);
+        }
+
+        function goBack() {
+            window.history.back();
+        }
+    </script>
+
+    <div class="min-h-screen flex flex-col">
+        <!-- Header -->
+        <div class="bg-white shadow-sm border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <button onclick="goBack()" class="flex items-center space-x-1 text-gray-600 hover:text-blue-600 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                    </svg>
+                    <span class="font-medium">Back</span>
+                </button>
+                <div class="h-6 w-px bg-gray-300"></div>
+                <h1 class="text-lg font-bold text-gray-800">Cluster Map</h1>
+                <span id="clusterTitle" class="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded"></span>
+            </div>
+        </div>
+
+        <!-- Map Container -->
+        <div class="flex-1 p-4">
+            <div id="map" class="w-full h-full bg-white rounded-lg shadow-lg min-h-[600px]"></div>
+        </div>
+    </div>
+</body>
+</html>

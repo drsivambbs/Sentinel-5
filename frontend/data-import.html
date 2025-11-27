@@ -199,70 +199,163 @@
         </div>
 
         <!-- Main Content -->
-        <div class="flex-1 overflow-auto custom-scroll p-1.5">
-            <div class="max-w-3xl mx-auto">
+        <div class="flex-1 overflow-hidden p-4">
+            <div class="grid grid-cols-2 gap-4 h-full">
                 
-                <!-- Upload Card -->
-                <div class="bg-white rounded-lg shadow p-3 mb-2">
-                    <h3 class="text-sm font-semibold text-gray-800 mb-2">Upload CSV File</h3>
-                    
-                    <div class="border-2 border-dashed border-gray-300 rounded p-4 text-center hover:border-primary transition-colors cursor-pointer" onclick="document.getElementById('csvFileInput').click()">
-                        <svg class="w-10 h-10 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <!-- Left Container - Import -->
+                <div class="bg-white rounded-lg shadow border border-gray-200 p-4 overflow-auto custom-scroll">
+                    <h2 class="text-lg font-bold text-gray-800 mb-3 border-b pb-2 flex items-center">
+                        <svg class="w-5 h-5 mr-2 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                         </svg>
-                        <p class="text-xs text-gray-700 mb-1 font-medium">Click to select CSV file</p>
-                        <p class="text-xs text-gray-500">or drag and drop</p>
-                        <input type="file" id="csvFileInput" accept=".csv" class="hidden" onchange="handleFileSelect(event)">
-                    </div>
+                        Data Import
+                    </h2>
                     
-                    <div id="fileInfo" class="mt-2 p-2 bg-gray-50 rounded hidden">
-                        <div class="flex items-center justify-between">
-                            <div class="text-xs">
-                                <p class="text-gray-700"><strong>File:</strong> <span id="fileName"></span></p>
-                                <p class="text-gray-600"><strong>Size:</strong> <span id="fileSize"></span></p>
-                            </div>
-                            <svg class="w-5 h-5 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    <!-- Upload Section -->
+                    <div class="mb-4">
+                        <h3 class="text-sm font-semibold text-gray-800 mb-2">Upload CSV File</h3>
+                        
+                        <div class="border-2 border-dashed border-gray-300 rounded p-4 text-center hover:border-primary transition-colors cursor-pointer" onclick="document.getElementById('csvFileInput').click()">
+                            <svg class="w-10 h-10 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                             </svg>
+                            <p class="text-xs text-gray-700 mb-1 font-medium">Click to select CSV file</p>
+                            <p class="text-xs text-gray-500">or drag and drop</p>
+                            <input type="file" id="csvFileInput" accept=".csv" class="hidden" onchange="handleFileSelect(event)">
                         </div>
+                        
+                        <div id="fileInfo" class="mt-2 p-2 bg-gray-50 rounded hidden">
+                            <div class="flex items-center justify-between">
+                                <div class="text-xs">
+                                    <p class="text-gray-700"><strong>File:</strong> <span id="fileName"></span></p>
+                                    <p class="text-gray-600"><strong>Size:</strong> <span id="fileSize"></span></p>
+                                </div>
+                                <svg class="w-5 h-5 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                            </div>
+                        </div>
+                        
+                        <button id="uploadBtn" onclick="uploadCSV()" class="mt-2 w-full bg-primary hover:bg-blue-600 text-white font-medium py-1.5 px-3 rounded transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            Validate & Upload
+                        </button>
+                        
+                        <div id="uploadStatus" class="hidden"></div>
                     </div>
-                    
-                    <button id="uploadBtn" onclick="uploadCSV()" class="mt-2 w-full bg-primary hover:bg-blue-600 text-white font-medium py-1.5 px-3 rounded transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                        Validate & Upload
-                    </button>
-                    
-                    <div id="uploadStatus" class="hidden"></div>
+
+                    <!-- Requirements Section -->
+                    <div class="border-t pt-4">
+                        <h3 class="text-sm font-semibold text-gray-800 mb-2">Requirements</h3>
+                        <ul class="space-y-1 text-xs text-gray-600">
+                            <li class="flex items-start">
+                                <svg class="w-3.5 h-3.5 text-primary mr-1.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <span>CSV format with 125 required columns</span>
+                            </li>
+                            <li class="flex items-start">
+                                <svg class="w-3.5 h-3.5 text-primary mr-1.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <span>Auto-validates schema and removes duplicates</span>
+                            </li>
+                            <li class="flex items-start">
+                                <svg class="w-3.5 h-3.5 text-primary mr-1.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <span>Processed through BigQuery sync pipeline</span>
+                            </li>
+                            <li class="flex items-start">
+                                <svg class="w-3.5 h-3.5 text-primary mr-1.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <span>Geocoding runs every 15 min (100 records/batch)</span>
+                            </li>
+                        </ul>
+                    </div>
                 </div>
 
-                <!-- Requirements Card -->
-                <div class="bg-white rounded-lg shadow p-3">
-                    <h3 class="text-sm font-semibold text-gray-800 mb-2">Requirements</h3>
-                    <ul class="space-y-1 text-xs text-gray-600">
-                        <li class="flex items-start">
-                            <svg class="w-3.5 h-3.5 text-primary mr-1.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            <span>CSV format with 125 required columns</span>
-                        </li>
-                        <li class="flex items-start">
-                            <svg class="w-3.5 h-3.5 text-primary mr-1.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            <span>Auto-validates schema and removes duplicates</span>
-                        </li>
-                        <li class="flex items-start">
-                            <svg class="w-3.5 h-3.5 text-primary mr-1.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            <span>Processed through BigQuery sync pipeline</span>
-                        </li>
-                        <li class="flex items-start">
-                            <svg class="w-3.5 h-3.5 text-primary mr-1.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            <span>Geocoding runs every 15 min (100 records/batch)</span>
-                        </li>
-                    </ul>
+                <!-- Right Container - Export -->
+                <div class="bg-white rounded-lg shadow border border-gray-200 p-4 overflow-auto custom-scroll">
+                    <h2 class="text-lg font-bold text-gray-800 mb-3 border-b pb-2 flex items-center">
+                        <svg class="w-5 h-5 mr-2 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                        </svg>
+                        Data Export
+                    </h2>
+                    
+                    <!-- Export Options -->
+                    <div class="space-y-3">
+                        <div class="border border-gray-200 rounded p-3 hover:border-success transition-colors">
+                            <div class="flex items-start justify-between mb-2">
+                                <div>
+                                    <h4 class="text-sm font-semibold text-gray-800">Export All Patients</h4>
+                                    <p class="text-xs text-gray-600 mt-1">Download complete patient dataset</p>
+                                </div>
+                                <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                </svg>
+                            </div>
+                            <button class="w-full bg-success hover:bg-green-600 text-white font-medium py-1.5 px-3 rounded transition-colors text-xs">
+                                Export CSV
+                            </button>
+                        </div>
+
+                        <div class="border border-gray-200 rounded p-3 hover:border-success transition-colors">
+                            <div class="flex items-start justify-between mb-2">
+                                <div>
+                                    <h4 class="text-sm font-semibold text-gray-800">Export Clusters</h4>
+                                    <p class="text-xs text-gray-600 mt-1">Download cluster analysis data</p>
+                                </div>
+                                <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                </svg>
+                            </div>
+                            <button class="w-full bg-success hover:bg-green-600 text-white font-medium py-1.5 px-3 rounded transition-colors text-xs">
+                                Export CSV
+                            </button>
+                        </div>
+
+                        <div class="border border-gray-200 rounded p-3 hover:border-success transition-colors">
+                            <div class="flex items-start justify-between mb-2">
+                                <div>
+                                    <h4 class="text-sm font-semibold text-gray-800">Export Linelist</h4>
+                                    <p class="text-xs text-gray-600 mt-1">Download formatted linelist report</p>
+                                </div>
+                                <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                </svg>
+                            </div>
+                            <button class="w-full bg-success hover:bg-green-600 text-white font-medium py-1.5 px-3 rounded transition-colors text-xs">
+                                Export CSV
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Export Info -->
+                    <div class="border-t pt-4 mt-4">
+                        <h3 class="text-sm font-semibold text-gray-800 mb-2">Export Information</h3>
+                        <ul class="space-y-1 text-xs text-gray-600">
+                            <li class="flex items-start">
+                                <svg class="w-3.5 h-3.5 text-success mr-1.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <span>All exports are in CSV format</span>
+                            </li>
+                            <li class="flex items-start">
+                                <svg class="w-3.5 h-3.5 text-success mr-1.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <span>Data includes latest geocoding results</span>
+                            </li>
+                            <li class="flex items-start">
+                                <svg class="w-3.5 h-3.5 text-success mr-1.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <span>Exports reflect current database state</span>
+                            </li>
+                        </ul>
+                    </div>
                 </div>
 
             </div>

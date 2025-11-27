@@ -864,12 +864,7 @@ def create_new_gis_cluster(patients_group, processing_date, syndrome, centroid_l
         'created_at': datetime.now(timezone.utc).isoformat()
     }
     
-    errors = client.insert_rows_json(client.get_table(SMART_CLUSTERS_TABLE), [cluster_record])
-    if errors:
-        logger.error(f"Failed to insert GIS cluster: {errors}")
-        raise Exception(f"BigQuery cluster insert failed: {errors}")
-    
-    # Create assignments
+    # Create assignments first
     assignments_to_insert = []
     for _, patient in patients_group.iterrows():
         assignments_to_insert.append({
@@ -881,10 +876,19 @@ def create_new_gis_cluster(patients_group, processing_date, syndrome, centroid_l
             'expansion_date': None
         })
     
+    # Insert assignments first
     errors = client.insert_rows_json(client.get_table(SMART_ASSIGNMENTS_TABLE), assignments_to_insert)
     if errors:
-        logger.error(f"Failed to insert new GIS cluster assignments: {errors}")
+        logger.error(f"Failed to insert GIS cluster assignments: {errors}")
         raise Exception(f"BigQuery assignment insert failed: {len(errors)} errors")
+    
+    # Only create cluster if assignments succeeded
+    errors = client.insert_rows_json(client.get_table(SMART_CLUSTERS_TABLE), [cluster_record])
+    if errors:
+        logger.error(f"Failed to insert GIS cluster: {errors}")
+        # Clean up assignments if cluster creation fails
+        client.query(f"DELETE FROM `{SMART_ASSIGNMENTS_TABLE}` WHERE smart_cluster_id = '{cluster_id}'")
+        raise Exception(f"BigQuery cluster insert failed: {errors}")
     
     logger.info(f"Created new GIS cluster {cluster_id} with {len(patients_group)} patients")
 
