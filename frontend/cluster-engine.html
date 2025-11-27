@@ -5,30 +5,337 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sentinel-5 | Cluster Engine</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+        
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .engine-card {
+            background: linear-gradient(145deg, #1e293b, #0f172a);
+            border: 1px solid #334155;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .engine-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .engine-card.active::before {
+            opacity: 1;
+            animation: shimmer 2s infinite;
+        }
+        
+        .engine-card.active {
+            border-color: #3b82f6;
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+        }
+        
+        .engine-card.completed {
+            border-color: #10b981;
+        }
+        
+        @keyframes shimmer {
+            0%, 100% { transform: translateX(-100%); }
+            50% { transform: translateX(100%); }
+        }
+        
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .status-idle { background: #64748b; }
+        .status-running { background: #f59e0b; }
+        .status-success { background: #10b981; }
+        .status-error { background: #ef4444; }
+        
+        .metric-box {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 8px;
+            margin-top: 8px;
+        }
+        
+        .metric-label {
+            font-size: 10px;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+        
+        .metric-value {
+            font-size: 18px;
+            color: #e2e8f0;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .engine-btn {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            border: none;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+        
+        .engine-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(59, 130, 246, 0.6);
+        }
+        
+        .engine-btn:disabled {
+            background: #334155;
+            box-shadow: none;
+            cursor: not-allowed;
+        }
+        
+        .step-number {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 24px;
+            font-weight: 700;
+            color: #475569;
+        }
+        
+        .engine-card.active .step-number {
+            color: #3b82f6;
+        }
+        
+        .engine-card.completed .step-number {
+            color: #10b981;
+        }
+        
+        .progress-bar {
+            height: 2px;
+            background: #334155;
+            position: relative;
+            overflow: hidden;
+            margin-top: 12px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #10b981);
+            transition: width 0.5s ease;
+        }
+    </style>
     <script>
         tailwind.config = {
             theme: {
                 extend: {
                     fontFamily: {
                         sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
                     },
                     colors: {
                         primary: '#3b82f6',
                         success: '#10b981',
                         warning: '#f59e0b',
                         danger: '#ef4444',
-                        background: '#f8fafc',
                     }
                 }
             }
         }
     </script>
 </head>
-<body class="bg-background font-sans antialiased text-gray-800 h-screen overflow-hidden">
+<body class="h-screen overflow-hidden">
 
     <script>
+        const SMART_CLUSTER_API = 'https://smart-cluster-engine-196547645490.asia-south1.run.app';
+        let completedSteps = [];
+
         window.goBack = function() {
             window.location.href = 'index.html';
+        }
+
+        function updateStepStatus(step, status, indicatorClass) {
+            const statusEl = document.getElementById(`step${step}-status`);
+            const indicator = document.getElementById(`step${step}-indicator`);
+            statusEl.textContent = status;
+            indicator.className = `status-indicator ${indicatorClass}`;
+        }
+
+        function setStepActive(step) {
+            document.querySelectorAll('.engine-card').forEach(card => card.classList.remove('active'));
+            document.getElementById(`step${step}-container`).classList.add('active');
+            updateProgress(step);
+        }
+
+        function setStepCompleted(step) {
+            document.getElementById(`step${step}-container`).classList.add('completed');
+            document.getElementById(`step${step}-container`).classList.remove('active');
+        }
+
+        function enableStep(step) {
+            const container = document.getElementById(`step${step}-container`);
+            const button = container.querySelector('button');
+            button.disabled = false;
+        }
+
+        function disableStep(step) {
+            const button = document.getElementById(`step${step}-container`).querySelector('button');
+            button.disabled = true;
+        }
+
+        function updateProgress(step) {
+            const progress = (step / 4) * 100;
+            document.getElementById('progress-fill').style.width = progress + '%';
+        }
+
+        function showStepResult(step, message) {
+            const resultsDiv = document.getElementById(`step${step}-results`);
+            const messageEl = document.getElementById(`step${step}-message`);
+            messageEl.innerHTML = message;
+            resultsDiv.classList.remove('hidden');
+        }
+
+        async function checkHealth() {
+            if (completedSteps.includes(1)) return;
+            
+            setStepActive(1);
+            updateStepStatus(1, 'RUNNING', 'status-running');
+            
+            try {
+                const response = await fetch(`${SMART_CLUSTER_API}/health`);
+                const data = await response.json();
+                
+                if (data.status === 'healthy') {
+                    updateStepStatus(1, 'ONLINE', 'status-success');
+                    showStepResult(1, `
+                        <div class="metric-box">
+                            <div class="metric-label">Total Clusters</div>
+                            <div class="metric-value">${data.clustering_stats?.total_clusters || '0'}</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Pending Review</div>
+                            <div class="metric-value">${data.clustering_stats?.gis_pending || '0'}</div>
+                        </div>
+                    `);
+                    completedSteps.push(1);
+                    setStepCompleted(1);
+                    disableStep(1);
+                    enableStep(2);
+                } else {
+                    updateStepStatus(1, 'FAILED', 'status-error');
+                    showStepResult(1, `<div class="text-red-400 text-xs">${data.error || 'Connection failed'}</div>`);
+                }
+            } catch (error) {
+                updateStepStatus(1, 'ERROR', 'status-error');
+                showStepResult(1, `<div class="text-red-400 text-xs">${error.message}</div>`);
+            }
+        }
+
+        async function checkQuality() {
+            if (completedSteps.includes(2)) return;
+            
+            setStepActive(2);
+            updateStepStatus(2, 'RUNNING', 'status-running');
+            
+            try {
+                const response = await fetch(`${SMART_CLUSTER_API}/smart-preflight`);
+                const data = await response.json();
+                
+                if (data.success && data.data_quality_passed && data.pending_clusters === 0) {
+                    updateStepStatus(2, 'PASSED', 'status-success');
+                    showStepResult(2, `
+                        <div class="metric-box">
+                            <div class="metric-label">Geocoding Quality</div>
+                            <div class="metric-value">${data.geocoding_threshold}%</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Next Process Date</div>
+                            <div class="metric-value text-sm">${data.test_date}</div>
+                        </div>
+                    `);
+                    completedSteps.push(2);
+                    setStepCompleted(2);
+                    disableStep(2);
+                    enableStep(3);
+                } else {
+                    updateStepStatus(2, 'FAILED', 'status-error');
+                    let failReason = '';
+                    if (!data.data_quality_passed) failReason += 'Geocoding quality below threshold<br>';
+                    if (data.pending_clusters > 0) {
+                        failReason += `${data.pending_clusters} clusters pending review<br><br>`;
+                        failReason += `<button onclick="window.location.href='clusters-view.html'" class="bg-orange-600 hover:bg-orange-700 text-white px-3 py-2 rounded text-xs font-medium mt-2 w-full">REVIEW PENDING CLUSTERS</button>`;
+                    }
+                    showStepResult(2, `<div class="text-red-400 text-xs">${failReason}</div>`);
+                }
+            } catch (error) {
+                updateStepStatus(2, 'ERROR', 'status-error');
+                showStepResult(2, `<div class="text-red-400 text-xs">${error.message}</div>`);
+            }
+        }
+
+        async function processClusters() {
+            if (completedSteps.includes(3)) return;
+            
+            setStepActive(3);
+            updateStepStatus(3, 'PROCESSING', 'status-running');
+            
+            try {
+                const response = await fetch(`${SMART_CLUSTER_API}/smart-process`, { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    updateStepStatus(3, 'COMPLETE', 'status-success');
+                    showStepResult(3, `
+                        <div class="metric-box">
+                            <div class="metric-label">Process Date</div>
+                            <div class="metric-value text-sm">${data.date_processed}</div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 mt-2">
+                            <div class="metric-box">
+                                <div class="metric-label">ABC Clusters</div>
+                                <div class="metric-value">${data.abc_clusters}</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-label">GIS Clusters</div>
+                                <div class="metric-value">${data.gis_clusters}</div>
+                            </div>
+                        </div>
+                    `);
+                    completedSteps.push(3);
+                    setStepCompleted(3);
+                    disableStep(3);
+                    enableStep(4);
+                } else {
+                    updateStepStatus(3, 'FAILED', 'status-error');
+                    showStepResult(3, `<div class="text-red-400 text-xs">${data.message || 'Processing failed'}</div>`);
+                }
+            } catch (error) {
+                updateStepStatus(3, 'ERROR', 'status-error');
+                showStepResult(3, `<div class="text-red-400 text-xs">${error.message}</div>`);
+            }
+        }
+
+        function goToPendingClusters() {
+            window.location.href = 'clusters-view.html';
         }
     </script>
 
@@ -36,45 +343,111 @@
     <div class="flex flex-col h-screen">
         
         <!-- Header Bar -->
-        <div class="bg-white shadow-sm border-b border-gray-200 px-2 py-1 flex items-center justify-between">
-            <div class="flex items-center space-x-1.5">
-                <button onclick="goBack()" class="flex items-center space-x-0.5 text-gray-600 hover:text-primary transition-colors">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <div class="bg-slate-900 border-b border-slate-700 px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <button onclick="goBack()" class="flex items-center space-x-1 text-slate-400 hover:text-blue-400 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
                     </svg>
                     <span class="text-xs font-medium">Back</span>
                 </button>
-                <div class="h-4 w-px bg-gray-300"></div>
-                <h1 class="text-sm font-bold text-gray-800">Sentinel-5</h1>
-                <span class="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">Cluster Engine</span>
+                <div class="h-5 w-px bg-slate-700"></div>
+                <h1 class="text-base font-bold text-slate-100 tracking-wide">SENTINEL-5</h1>
+                <span class="text-xs text-blue-400 bg-blue-500/10 px-2 py-1 rounded border border-blue-500/30 font-mono">CLUSTER ENGINE</span>
             </div>
+            <div class="flex items-center space-x-3">
+                <div class="text-xs text-slate-400 font-mono">
+                    <span class="text-slate-500">STATUS:</span> 
+                    <span class="text-green-400">OPERATIONAL</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Progress Bar -->
+        <div class="progress-bar">
+            <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
         </div>
 
         <!-- Main Content -->
-        <div class="flex-1 p-4 overflow-hidden">
-            <div class="grid grid-cols-3 gap-4 h-full">
+        <div class="flex-1 p-6 overflow-hidden">
+            <div class="grid grid-cols-4 gap-6 h-full">
                 
-                <!-- Container 1 -->
-                <div class="bg-white rounded-lg shadow border border-gray-200 p-4 overflow-auto">
-                    <h2 class="text-lg font-bold text-gray-800 mb-3 border-b pb-2">Container 1</h2>
-                    <div class="space-y-2">
-                        <p class="text-sm text-gray-600">Content for container 1</p>
+                <!-- Stage 1: System Health -->
+                <div class="engine-card rounded-xl p-5 overflow-auto flex flex-col" id="step1-container">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="step-number">01</div>
+                        <div class="flex items-center text-xs font-mono text-slate-400">
+                            <span id="step1-indicator" class="status-indicator status-idle"></span>
+                            <span id="step1-status">IDLE</span>
+                        </div>
+                    </div>
+                    <h3 class="text-sm font-bold text-slate-200 mb-2 uppercase tracking-wider">System Health</h3>
+                    <p class="text-xs text-slate-400 mb-4 flex-grow leading-relaxed">Verify database connectivity and system status</p>
+                    <button onclick="checkHealth()" class="engine-btn text-white px-4 py-3 rounded-lg text-xs w-full">
+                        INITIALIZE CHECK
+                    </button>
+                    <div id="step1-results" class="mt-4 hidden">
+                        <div id="step1-message"></div>
                     </div>
                 </div>
 
-                <!-- Container 2 -->
-                <div class="bg-white rounded-lg shadow border border-gray-200 p-4 overflow-auto">
-                    <h2 class="text-lg font-bold text-gray-800 mb-3 border-b pb-2">Container 2</h2>
-                    <div class="space-y-2">
-                        <p class="text-sm text-gray-600">Content for container 2</p>
+                <!-- Stage 2: Data Quality -->
+                <div class="engine-card rounded-xl p-5 overflow-auto flex flex-col" id="step2-container">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="step-number">02</div>
+                        <div class="flex items-center text-xs font-mono text-slate-400">
+                            <span id="step2-indicator" class="status-indicator status-idle"></span>
+                            <span id="step2-status">IDLE</span>
+                        </div>
+                    </div>
+                    <h3 class="text-sm font-bold text-slate-200 mb-2 uppercase tracking-wider">Data Quality</h3>
+                    <p class="text-xs text-slate-400 mb-4 flex-grow leading-relaxed">Validate geocoding quality and pending clusters</p>
+                    <button onclick="checkQuality()" disabled class="engine-btn text-white px-4 py-3 rounded-lg text-xs w-full">
+                        RUN VALIDATION
+                    </button>
+                    <div id="step2-results" class="mt-4 hidden">
+                        <div id="step2-message"></div>
                     </div>
                 </div>
 
-                <!-- Container 3 -->
-                <div class="bg-white rounded-lg shadow border border-gray-200 p-4 overflow-auto">
-                    <h2 class="text-lg font-bold text-gray-800 mb-3 border-b pb-2">Container 3</h2>
-                    <div class="space-y-2">
-                        <p class="text-sm text-gray-600">Content for container 3</p>
+                <!-- Stage 3: Processing -->
+                <div class="engine-card rounded-xl p-5 overflow-auto flex flex-col" id="step3-container">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="step-number">03</div>
+                        <div class="flex items-center text-xs font-mono text-slate-400">
+                            <span id="step3-indicator" class="status-indicator status-idle"></span>
+                            <span id="step3-status">IDLE</span>
+                        </div>
+                    </div>
+                    <h3 class="text-sm font-bold text-slate-200 mb-2 uppercase tracking-wider">Process Engine</h3>
+                    <p class="text-xs text-slate-400 mb-4 flex-grow leading-relaxed">Execute clustering algorithm on next date batch</p>
+                    <button onclick="processClusters()" disabled class="engine-btn text-white px-4 py-3 rounded-lg text-xs w-full">
+                        START PROCESSING
+                    </button>
+                    <div id="step3-results" class="mt-4 hidden">
+                        <div id="step3-message"></div>
+                    </div>
+                </div>
+
+                <!-- Stage 4: Review -->
+                <div class="engine-card rounded-xl p-5 overflow-auto flex flex-col" id="step4-container">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="step-number">04</div>
+                        <div class="flex items-center text-xs font-mono text-slate-400">
+                            <span id="step4-indicator" class="status-indicator status-idle"></span>
+                            <span id="step4-status">IDLE</span>
+                        </div>
+                    </div>
+                    <h3 class="text-sm font-bold text-slate-200 mb-2 uppercase tracking-wider">Review Queue</h3>
+                    <p class="text-xs text-slate-400 mb-4 flex-grow leading-relaxed">Review and approve pending cluster results</p>
+                    <button onclick="goToPendingClusters()" disabled class="engine-btn text-white px-4 py-3 rounded-lg text-xs w-full mb-2">
+                        OPEN REVIEW
+                    </button>
+                    <button onclick="goToPendingClusters()" class="bg-slate-600 hover:bg-slate-500 text-white px-4 py-2 rounded-lg text-xs w-full">
+                        VIEW CLUSTERS
+                    </button>
+                    <div id="step4-results" class="mt-4 hidden">
+                        <div id="step4-message"></div>
                     </div>
                 </div>
 

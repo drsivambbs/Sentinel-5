@@ -78,6 +78,8 @@
                     document.getElementById('clusterSelect').value = clusterIdFromUrl;
                     
                     const cluster = allClusters.find(c => c.smart_cluster_id === clusterIdFromUrl);
+                    updateClusterDetails(cluster);
+                    
                     const mapBtn = document.getElementById('showMapBtn');
                     const acceptBtn = document.getElementById('acceptBtn');
                     const rejectBtn = document.getElementById('rejectBtn');
@@ -224,7 +226,28 @@
             }
         }
 
+        function updateClusterDetails(cluster) {
+            const panel = document.getElementById('clusterDetailsPanel');
+            if (!cluster) {
+                panel.classList.add('hidden');
+                return;
+            }
+            
+            document.getElementById('detailClusterId').textContent = cluster.smart_cluster_id;
+            document.getElementById('detailAlgorithm').textContent = cluster.algorithm_type;
+            document.getElementById('detailStatus').textContent = cluster.accept_status;
+            document.getElementById('detailPatientCount').textContent = cluster.patient_count;
+            document.getElementById('detailDateRange').textContent = `${cluster.start_date} to ${cluster.end_date}`;
+            document.getElementById('detailSyndrome').textContent = cluster.syndrome || 'Mixed';
+            
+            panel.classList.remove('hidden');
+        }
+
+        let skipOnChange = false;
+
         window.onClusterChange = function() {
+            if (skipOnChange) return;
+            
             const clusterId = document.getElementById('clusterSelect').value;
             const mapBtn = document.getElementById('showMapBtn');
             const acceptBtn = document.getElementById('acceptBtn');
@@ -232,6 +255,7 @@
             
             if (clusterId) {
                 const cluster = allClusters.find(c => c.smart_cluster_id === clusterId);
+                updateClusterDetails(cluster);
                 
                 // Show map button for GIS clusters
                 if (cluster && cluster.algorithm_type === 'GIS') {
@@ -251,6 +275,7 @@
                 
                 loadClusterPatients(clusterId);
             } else {
+                updateClusterDetails(null);
                 mapBtn.classList.add('hidden');
                 acceptBtn.classList.add('hidden');
                 rejectBtn.classList.add('hidden');
@@ -433,6 +458,11 @@
             const clusterId = document.getElementById('clusterSelect').value;
             if (!clusterId) return;
             
+            // Show confirmation modal
+            if (!await showConfirmModal('Accept Cluster', `Are you sure you want to accept cluster ${clusterId}? This action cannot be undone.`)) {
+                return;
+            }
+            
             try {
                 showNotification('Accepting cluster...', 'primary');
                 const response = await fetch(`${SMART_CLUSTER_API}/accept-cluster`, {
@@ -448,8 +478,19 @@
                 
                 const data = await response.json();
                 if (data.success) {
-                    showNotification('Cluster accepted', 'success');
-                    // Hide buttons and update cluster status
+                    showNotification('Cluster accepted successfully', 'success');
+                    // Reload clusters to get updated data from backend
+                    await loadClusters();
+                    // Get updated cluster data
+                    const updatedCluster = allClusters.find(c => c.smart_cluster_id === clusterId);
+                    // Update dropdown options while preserving selection
+                    skipOnChange = true;
+                    populateClusterDropdown();
+                    document.getElementById('clusterSelect').value = clusterId;
+                    skipOnChange = false;
+                    // Update details panel with fresh data
+                    updateClusterDetails(updatedCluster);
+                    // Force hide buttons since cluster is now accepted
                     document.getElementById('acceptBtn').classList.add('hidden');
                     document.getElementById('rejectBtn').classList.add('hidden');
                 } else {
@@ -490,6 +531,34 @@
         }
 
 
+
+        window.showConfirmModal = function(title, message) {
+            return new Promise((resolve) => {
+                const modal = document.createElement('div');
+                modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+                modal.innerHTML = `
+                    <div class="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-3">${title}</h3>
+                        <p class="text-gray-600 mb-6">${message}</p>
+                        <div class="flex space-x-3 justify-end">
+                            <button onclick="closeModal(false)" class="px-4 py-2 text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition-colors">
+                                Cancel
+                            </button>
+                            <button onclick="closeModal(true)" class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 transition-colors">
+                                Accept
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                window.closeModal = function(result) {
+                    document.body.removeChild(modal);
+                    resolve(result);
+                };
+                
+                document.body.appendChild(modal);
+            });
+        }
 
         window.showNotification = function(message, type = 'primary') {
             const container = document.getElementById('notificationContainer');
@@ -574,6 +643,36 @@
             </div>
             <div class="flex items-center">
                 <span id="recordCount" class="text-xs text-gray-600 bg-primary/10 px-2 py-0.5 rounded font-medium">0 patients</span>
+            </div>
+        </div>
+
+        <!-- Cluster Details Panel -->
+        <div id="clusterDetailsPanel" class="hidden bg-blue-50 border-b border-blue-200 px-3 py-2">
+            <div class="grid grid-cols-6 gap-4 text-xs">
+                <div>
+                    <span class="font-medium text-gray-600">Cluster ID:</span>
+                    <div id="detailClusterId" class="font-mono text-blue-700">-</div>
+                </div>
+                <div>
+                    <span class="font-medium text-gray-600">Algorithm:</span>
+                    <div id="detailAlgorithm" class="font-medium">-</div>
+                </div>
+                <div>
+                    <span class="font-medium text-gray-600">Status:</span>
+                    <div id="detailStatus" class="font-medium">-</div>
+                </div>
+                <div>
+                    <span class="font-medium text-gray-600">Patients:</span>
+                    <div id="detailPatientCount" class="font-medium text-green-700">-</div>
+                </div>
+                <div>
+                    <span class="font-medium text-gray-600">Date Range:</span>
+                    <div id="detailDateRange" class="text-gray-700">-</div>
+                </div>
+                <div>
+                    <span class="font-medium text-gray-600">Syndrome:</span>
+                    <div id="detailSyndrome" class="text-gray-700">-</div>
+                </div>
             </div>
         </div>
 

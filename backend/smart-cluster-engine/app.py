@@ -1,7 +1,7 @@
 # Smart Clustering Engine - Enhanced outbreak continuity tracking
 # Implements time-based and geographic merging without overlap thresholds
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 from google.cloud import bigquery
 from datetime import datetime, timedelta, timezone
@@ -898,6 +898,10 @@ def create_new_gis_cluster(patients_group, processing_date, syndrome, centroid_l
 
 @app.route('/', methods=['GET'])
 def index():
+    return render_template('index.html')
+
+@app.route('/api', methods=['GET'])
+def api_info():
     return jsonify({
         'service': 'Smart Clustering Engine',
         'version': '1.0.0',
@@ -1189,38 +1193,81 @@ def smart_clusters():
             date_filter = f"AND c.original_creation_date >= (SELECT DISTINCT original_creation_date FROM `{SMART_CLUSTERS_TABLE}` ORDER BY original_creation_date DESC LIMIT 1 OFFSET {days-1})"
         else:
             date_filter = ""
-        query = f"""
-        WITH cluster_sites AS (
+        # Check if override table exists
+        override_table = f"{PROJECT_ID}.{DATASET_ID}.cluster_status_overrides"
+        try:
+            client.get_table(override_table)
+            use_override = True
+        except:
+            use_override = False
+        
+        if use_override:
+            query = f"""
+            WITH cluster_sites AS (
+                SELECT 
+                    a.smart_cluster_id,
+                    p.site_code,
+                    COUNT(*) as site_count,
+                    ROW_NUMBER() OVER (PARTITION BY a.smart_cluster_id ORDER BY COUNT(*) DESC) as rn
+                FROM `{SMART_ASSIGNMENTS_TABLE}` a
+                JOIN `{SOURCE_TABLE}` p ON a.unique_id = p.unique_id
+                WHERE p.site_code IS NOT NULL
+                GROUP BY a.smart_cluster_id, p.site_code
+            )
             SELECT 
-                a.smart_cluster_id,
-                p.site_code,
-                COUNT(*) as site_count,
-                ROW_NUMBER() OVER (PARTITION BY a.smart_cluster_id ORDER BY COUNT(*) DESC) as rn
-            FROM `{SMART_ASSIGNMENTS_TABLE}` a
-            JOIN `{SOURCE_TABLE}` p ON a.unique_id = p.unique_id
-            WHERE p.site_code IS NOT NULL
-            GROUP BY a.smart_cluster_id, p.site_code
-        )
-        SELECT 
-            c.smart_cluster_id,
-            c.algorithm_type,
-            c.input_date,
-            c.original_creation_date,
-            c.actual_cluster_radius,
-            c.accept_status,
-            c.patient_count,
-            c.primary_syndrome,
-            c.centroid_lat,
-            c.centroid_lon,
-            c.village_name,
-            c.expansion_count,
-            c.created_at,
-            cs.site_code as most_common_site_code
-        FROM `{SMART_CLUSTERS_TABLE}` c
-        LEFT JOIN cluster_sites cs ON c.smart_cluster_id = cs.smart_cluster_id AND cs.rn = 1
-        WHERE 1=1 {date_filter}
-        ORDER BY c.created_at DESC
-        """
+                c.smart_cluster_id,
+                c.algorithm_type,
+                c.input_date,
+                c.original_creation_date,
+                c.actual_cluster_radius,
+                COALESCE(o.new_status, c.accept_status) as accept_status,
+                c.patient_count,
+                c.primary_syndrome,
+                c.centroid_lat,
+                c.centroid_lon,
+                c.village_name,
+                c.expansion_count,
+                c.created_at,
+                cs.site_code as most_common_site_code
+            FROM `{SMART_CLUSTERS_TABLE}` c
+            LEFT JOIN cluster_sites cs ON c.smart_cluster_id = cs.smart_cluster_id AND cs.rn = 1
+            LEFT JOIN `{override_table}` o ON c.smart_cluster_id = o.smart_cluster_id
+            WHERE 1=1 {date_filter}
+            ORDER BY c.created_at DESC
+            """
+        else:
+            query = f"""
+            WITH cluster_sites AS (
+                SELECT 
+                    a.smart_cluster_id,
+                    p.site_code,
+                    COUNT(*) as site_count,
+                    ROW_NUMBER() OVER (PARTITION BY a.smart_cluster_id ORDER BY COUNT(*) DESC) as rn
+                FROM `{SMART_ASSIGNMENTS_TABLE}` a
+                JOIN `{SOURCE_TABLE}` p ON a.unique_id = p.unique_id
+                WHERE p.site_code IS NOT NULL
+                GROUP BY a.smart_cluster_id, p.site_code
+            )
+            SELECT 
+                c.smart_cluster_id,
+                c.algorithm_type,
+                c.input_date,
+                c.original_creation_date,
+                c.actual_cluster_radius,
+                c.accept_status,
+                c.patient_count,
+                c.primary_syndrome,
+                c.centroid_lat,
+                c.centroid_lon,
+                c.village_name,
+                c.expansion_count,
+                c.created_at,
+                cs.site_code as most_common_site_code
+            FROM `{SMART_CLUSTERS_TABLE}` c
+            LEFT JOIN cluster_sites cs ON c.smart_cluster_id = cs.smart_cluster_id AND cs.rn = 1
+            WHERE 1=1 {date_filter}
+            ORDER BY c.created_at DESC
+            """
         
         df = client.query(query).to_dataframe()
         
@@ -1361,12 +1408,11 @@ def accept_cluster():
         if not cluster_id:
             return jsonify({'success': False, 'error': 'cluster_id required'}), 400
         
-        # Update cluster status to Accepted
-        update_query = f"""
-        UPDATE `{SMART_CLUSTERS_TABLE}`
-        SET accept_status = 'Accepted'
+        # First check if cluster exists and is pending
+        check_query = f"""
+        SELECT smart_cluster_id, accept_status
+        FROM `{SMART_CLUSTERS_TABLE}`
         WHERE smart_cluster_id = @cluster_id
-          AND accept_status = 'Pending'
         """
         
         job_config = bigquery.QueryJobConfig(
@@ -1375,8 +1421,48 @@ def accept_cluster():
             ]
         )
         
-        result = client.query(update_query, job_config=job_config)
+        check_result = client.query(check_query, job_config=job_config).to_dataframe()
         
+        if len(check_result) == 0:
+            return jsonify({
+                'success': False,
+                'error': f'Cluster {cluster_id} not found'
+            }), 404
+        
+        current_status = check_result.iloc[0]['accept_status']
+        if current_status != 'Pending':
+            return jsonify({
+                'success': False,
+                'error': f'Cluster {cluster_id} is already {current_status}'
+            }), 400
+        
+        # Insert into status override table (avoids streaming buffer issues)
+        status_override_table = f"{PROJECT_ID}.{DATASET_ID}.cluster_status_overrides"
+        
+        # Create override table if not exists
+        try:
+            client.get_table(status_override_table)
+        except:
+            schema = [
+                bigquery.SchemaField("smart_cluster_id", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("new_status", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("updated_at", "TIMESTAMP", mode="REQUIRED"),
+            ]
+            table = bigquery.Table(status_override_table, schema=schema)
+            client.create_table(table)
+        
+        # Insert status override
+        override_record = {
+            'smart_cluster_id': cluster_id,
+            'new_status': 'Accepted',
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }
+        
+        errors = client.insert_rows_json(client.get_table(status_override_table), [override_record])
+        if errors:
+            raise Exception(f"Failed to insert status override: {errors}")
+        
+        # Status override inserted successfully
         return jsonify({
             'success': True,
             'message': f'Cluster {cluster_id} accepted successfully',

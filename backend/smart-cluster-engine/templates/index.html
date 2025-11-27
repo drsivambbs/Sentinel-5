@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Cluster Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold text-center mb-8">Smart Cluster Engine</h1>
+        
+        <!-- Step 1: System Health Check -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-semibold">Step 1: System Health Check</h2>
+                <span id="step1-status" class="px-3 py-1 rounded-full text-sm bg-gray-200">Not Started</span>
+            </div>
+            <p class="text-gray-600 mb-4">Verify system connectivity and table status</p>
+            <button id="health-btn" onclick="checkHealth()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+                Check System Health
+            </button>
+            <div id="health-results" class="mt-4 hidden">
+                <h3 class="font-semibold mb-2">Results:</h3>
+                <pre id="health-log" class="bg-gray-100 p-3 rounded text-sm overflow-auto max-h-40"></pre>
+            </div>
+        </div>
+
+        <!-- Step 2: Data Quality Check -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6 opacity-50" id="step2-container">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-semibold">Step 2: Data Quality Check</h2>
+                <span id="step2-status" class="px-3 py-1 rounded-full text-sm bg-gray-200">Waiting</span>
+            </div>
+            <p class="text-gray-600 mb-4">Validate geocoding quality and check for processing readiness</p>
+            <button id="quality-btn" onclick="checkQuality()" disabled class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded disabled:bg-gray-400">
+                Check Data Quality
+            </button>
+            <div id="quality-results" class="mt-4 hidden">
+                <h3 class="font-semibold mb-2">Results:</h3>
+                <pre id="quality-log" class="bg-gray-100 p-3 rounded text-sm overflow-auto max-h-40"></pre>
+            </div>
+        </div>
+
+        <!-- Step 3: Process Clusters -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6 opacity-50" id="step3-container">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-semibold">Step 3: Process Clusters</h2>
+                <span id="step3-status" class="px-3 py-1 rounded-full text-sm bg-gray-200">Waiting</span>
+            </div>
+            <p class="text-gray-600 mb-4">Run smart clustering algorithm for next available date</p>
+            <button id="process-btn" onclick="processClusters()" disabled class="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded disabled:bg-gray-400">
+                Process Next Date
+            </button>
+            <div id="process-results" class="mt-4 hidden">
+                <h3 class="font-semibold mb-2">Results:</h3>
+                <pre id="process-log" class="bg-gray-100 p-3 rounded text-sm overflow-auto max-h-40"></pre>
+            </div>
+        </div>
+
+        <!-- Step 4: Review Results -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6 opacity-50" id="step4-container">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-semibold">Step 4: Review Results</h2>
+                <span id="step4-status" class="px-3 py-1 rounded-full text-sm bg-gray-200">Waiting</span>
+            </div>
+            <p class="text-gray-600 mb-4">Review and approve pending clusters</p>
+            <button id="review-btn" onclick="reviewClusters()" disabled class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded disabled:bg-gray-400">
+                Review Pending Clusters
+            </button>
+            <div id="review-results" class="mt-4 hidden">
+                <h3 class="font-semibold mb-2">Pending Clusters:</h3>
+                <div id="pending-clusters" class="space-y-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentStep = 1;
+
+        function updateStepStatus(step, status, color) {
+            const statusEl = document.getElementById(`step${step}-status`);
+            statusEl.textContent = status;
+            statusEl.className = `px-3 py-1 rounded-full text-sm ${color}`;
+        }
+
+        function enableStep(step) {
+            const container = document.getElementById(`step${step}-container`);
+            const button = container.querySelector('button');
+            container.classList.remove('opacity-50');
+            button.disabled = false;
+            currentStep = step;
+        }
+
+        function logResult(elementId, data) {
+            const logEl = document.getElementById(elementId);
+            const resultsEl = document.getElementById(elementId.replace('-log', '-results'));
+            logEl.textContent = JSON.stringify(data, null, 2);
+            resultsEl.classList.remove('hidden');
+        }
+
+        async function checkHealth() {
+            updateStepStatus(1, 'Running...', 'bg-yellow-200 text-yellow-800');
+            
+            try {
+                const response = await fetch('/health');
+                const data = await response.json();
+                
+                logResult('health-log', data);
+                
+                if (data.status === 'healthy') {
+                    updateStepStatus(1, 'Passed', 'bg-green-200 text-green-800');
+                    enableStep(2);
+                } else {
+                    updateStepStatus(1, 'Failed', 'bg-red-200 text-red-800');
+                }
+            } catch (error) {
+                updateStepStatus(1, 'Error', 'bg-red-200 text-red-800');
+                logResult('health-log', { error: error.message });
+            }
+        }
+
+        async function checkQuality() {
+            updateStepStatus(2, 'Running...', 'bg-yellow-200 text-yellow-800');
+            
+            try {
+                const response = await fetch('/smart-preflight');
+                const data = await response.json();
+                
+                logResult('quality-log', data);
+                
+                if (data.success && data.data_quality_passed) {
+                    updateStepStatus(2, 'Passed', 'bg-green-200 text-green-800');
+                    enableStep(3);
+                } else {
+                    updateStepStatus(2, 'Failed', 'bg-red-200 text-red-800');
+                }
+            } catch (error) {
+                updateStepStatus(2, 'Error', 'bg-red-200 text-red-800');
+                logResult('quality-log', { error: error.message });
+            }
+        }
+
+        async function processClusters() {
+            updateStepStatus(3, 'Running...', 'bg-yellow-200 text-yellow-800');
+            
+            try {
+                const response = await fetch('/smart-process', { method: 'POST' });
+                const data = await response.json();
+                
+                logResult('process-log', data);
+                
+                if (data.success) {
+                    updateStepStatus(3, 'Completed', 'bg-green-200 text-green-800');
+                    enableStep(4);
+                } else {
+                    updateStepStatus(3, 'Failed', 'bg-red-200 text-red-800');
+                }
+            } catch (error) {
+                updateStepStatus(3, 'Error', 'bg-red-200 text-red-800');
+                logResult('process-log', { error: error.message });
+            }
+        }
+
+        async function reviewClusters() {
+            updateStepStatus(4, 'Loading...', 'bg-yellow-200 text-yellow-800');
+            
+            try {
+                const response = await fetch('/smart-clusters');
+                const data = await response.json();
+                
+                const pendingClusters = data.clusters.filter(c => c.accept_status === 'Pending');
+                
+                const pendingDiv = document.getElementById('pending-clusters');
+                const resultsDiv = document.getElementById('review-results');
+                
+                if (pendingClusters.length === 0) {
+                    pendingDiv.innerHTML = '<p class="text-green-600">No pending clusters to review!</p>';
+                    updateStepStatus(4, 'Complete', 'bg-green-200 text-green-800');
+                } else {
+                    pendingDiv.innerHTML = pendingClusters.map(cluster => `
+                        <div class="border p-3 rounded flex justify-between items-center">
+                            <div>
+                                <strong>${cluster.smart_cluster_id}</strong> - ${cluster.algorithm_type} 
+                                (${cluster.patient_count} patients)
+                            </div>
+                            <div class="space-x-2">
+                                <button onclick="acceptCluster('${cluster.smart_cluster_id}')" 
+                                        class="bg-green-500 text-white px-3 py-1 rounded text-sm">Accept</button>
+                                <button onclick="rejectCluster('${cluster.smart_cluster_id}')" 
+                                        class="bg-red-500 text-white px-3 py-1 rounded text-sm">Reject</button>
+                            </div>
+                        </div>
+                    `).join('');
+                    updateStepStatus(4, `${pendingClusters.length} Pending`, 'bg-orange-200 text-orange-800');
+                }
+                
+                resultsDiv.classList.remove('hidden');
+            } catch (error) {
+                updateStepStatus(4, 'Error', 'bg-red-200 text-red-800');
+                logResult('review-log', { error: error.message });
+            }
+        }
+
+        async function acceptCluster(clusterId) {
+            try {
+                const response = await fetch('/accept-cluster', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cluster_id: clusterId })
+                });
+                
+                if (response.ok) {
+                    reviewClusters(); // Refresh the list
+                }
+            } catch (error) {
+                alert('Error accepting cluster: ' + error.message);
+            }
+        }
+
+        async function rejectCluster(clusterId) {
+            if (confirm('Are you sure you want to reject this cluster?')) {
+                try {
+                    const response = await fetch('/reject-cluster', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ cluster_id: clusterId })
+                    });
+                    
+                    if (response.ok) {
+                        reviewClusters(); // Refresh the list
+                    }
+                } catch (error) {
+                    alert('Error rejecting cluster: ' + error.message);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
