@@ -56,7 +56,7 @@
 <body class="bg-background font-sans antialiased text-gray-800 h-screen overflow-hidden">
 
     <script>
-        const API_ENDPOINT = 'https://sentinel-dashboard-api-196547645490.asia-south1.run.app';
+        const API_ENDPOINT = 'https://smart-cluster-engine-196547645490.asia-south1.run.app';
         
         let allClusters = [];
         let filteredClusters = [];
@@ -77,12 +77,23 @@
             try {
                 showNotification('Loading clusters...', 'primary');
                 
-                // Fetch from BigQuery via Dashboard API
-                const response = await fetch(`${API_ENDPOINT}/api/clusters`);
+                // Fetch from Smart Cluster Engine API
+                const response = await fetch(`${API_ENDPOINT}/smart-clusters`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    mode: 'cors'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const data = await response.json();
                 
                 if (data.success) {
-                    allClusters = data.data || [];
+                    allClusters = data.clusters || [];
                     applyFilters();
                     showNotification(`Loaded ${allClusters.length} clusters`, 'success');
                 } else {
@@ -111,13 +122,14 @@
 
             filteredClusters = allClusters.filter(cluster => {
                 const matchesSearch = !searchTerm || 
-                    (cluster.cluster_id || '').toLowerCase().includes(searchTerm) ||
-                    (cluster.location || '').toLowerCase().includes(searchTerm) ||
+                    (cluster.smart_cluster_id || '').toLowerCase().includes(searchTerm) ||
+                    (cluster.most_common_site_code || '').toLowerCase().includes(searchTerm) ||
+                    (cluster.primary_syndrome || '').toLowerCase().includes(searchTerm) ||
                     (cluster.accept_status || '').toLowerCase().includes(searchTerm);
                 
-                const matchesAlgo = !filterAlgo || (cluster.cluster_id || '').startsWith(filterAlgo);
+                const matchesAlgo = !filterAlgo || (cluster.algorithm_type || '') === filterAlgo;
                 const matchesStatus = !filterStatus || (cluster.accept_status || '').toLowerCase() === filterStatus.toLowerCase();
-                const matchesCases = (cluster.case_count || 0) >= filterMinCases;
+                const matchesCases = (cluster.patient_count || 0) >= filterMinCases;
 
                 return matchesSearch && matchesAlgo && matchesStatus && matchesCases;
             });
@@ -172,33 +184,101 @@
         }
 
         // --- Data Operations ---
-        window.updateClusterStatus = async function(clusterId, currentStatus) {
-            const statusMap = { 
-                'pending': 'accepted', 
-                'accepted': 'rejected', 
-                'rejected': 'pending' 
-            };
-            const newStatus = statusMap[currentStatus.toLowerCase()] || 'pending';
-            
+        window.acceptCluster = async function(clusterId) {
             try {
-                const response = await fetch(`${API_ENDPOINT}/api/clusters/update`, {
+                showNotification('Accepting cluster...', 'primary');
+                const response = await fetch(`${API_ENDPOINT}/accept-cluster`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        cluster_id: clusterId, 
-                        accept_status: newStatus 
-                    })
+                    mode: 'cors',
+                    body: JSON.stringify({ cluster_id: clusterId })
                 });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
                 
                 const data = await response.json();
                 
                 if (data.success) {
-                    const cluster = allClusters.find(c => c.cluster_id === clusterId);
-                    if (cluster) {
-                        cluster.accept_status = newStatus;
-                        applyFilters();
-                        showNotification(`Status updated to ${newStatus}`, 'success');
-                    }
+                    showNotification('Cluster accepted', 'success');
+                    loadClusters();
+                } else {
+                    throw new Error(data.error || 'Accept failed');
+                }
+            } catch (error) {
+                console.error('Accept error:', error);
+                showNotification('Error accepting cluster: ' + error.message, 'danger');
+            }
+        }
+
+        window.rejectCluster = async function(clusterId) {
+            if (!confirm('Reject this cluster?')) return;
+            
+            try {
+                showNotification('Rejecting cluster...', 'primary');
+                const response = await fetch(`${API_ENDPOINT}/reject-cluster`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    mode: 'cors',
+                    body: JSON.stringify({ cluster_id: clusterId })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showNotification('Cluster rejected', 'success');
+                    loadClusters();
+                } else {
+                    throw new Error(data.error || 'Reject failed');
+                }
+            } catch (error) {
+                console.error('Reject error:', error);
+                showNotification('Error rejecting cluster: ' + error.message, 'danger');
+            }
+        }
+
+        window.updateClusterStatus = async function(clusterId, currentStatus) {
+            const statusMap = { 
+                'pending': 'Accepted', 
+                'accepted': 'Rejected', 
+                'rejected': 'Pending' 
+            };
+            const newStatus = statusMap[currentStatus.toLowerCase()] || 'Pending';
+            
+            try {
+                let endpoint, body;
+                if (newStatus === 'Accepted') {
+                    endpoint = `${API_ENDPOINT}/accept-cluster`;
+                    body = { cluster_id: clusterId };
+                } else if (newStatus === 'Rejected') {
+                    endpoint = `${API_ENDPOINT}/reject-cluster`;
+                    body = { cluster_id: clusterId };
+                } else {
+                    showNotification('Cannot change status back to pending', 'warning');
+                    return;
+                }
+                
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    mode: 'cors',
+                    body: JSON.stringify(body)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showNotification(`Cluster ${newStatus.toLowerCase()} successfully`, 'success');
+                    loadClusters(); // Refresh the list
                 } else {
                     throw new Error(data.error || 'Update failed');
                 }
@@ -217,7 +297,7 @@
             const tbody = document.getElementById('tableBody');
             
             if (filteredClusters.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-gray-400">No clusters found.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-gray-400">No clusters found.</td></tr>`;
                 document.getElementById('recordCount').textContent = '0 clusters';
                 document.getElementById('pageInfo').textContent = '0-0 of 0';
                 updatePaginationButtons();
@@ -237,8 +317,6 @@
             const paginatedClusters = filteredClusters.slice(startIndex, endIndex);
 
             tbody.innerHTML = paginatedClusters.map(cluster => {
-                const algoType = (cluster.cluster_id || '').startsWith('ABC') ? 'ABC' : 
-                                (cluster.cluster_id || '').startsWith('GIS') ? 'GIS' : 'N/A';
                 const statusColors = {
                     'pending': 'bg-warning/20 text-warning',
                     'accepted': 'bg-success/20 text-success',
@@ -248,17 +326,25 @@
                 
                 return `
                     <tr class="border-b border-gray-100">
-                        <td class="px-2 py-1.5 font-mono text-xs text-gray-700">${cluster.cluster_id || 'N/A'}</td>
-                        <td class="px-2 py-1.5 text-xs text-gray-700">${algoType}</td>
-                        <td class="px-2 py-1.5 text-xs text-gray-700 text-center font-semibold">${cluster.case_count || 0}</td>
-                        <td class="px-2 py-1.5 text-xs text-gray-600">${cluster.location || 'N/A'}</td>
-                        <td class="px-2 py-1.5 text-xs text-gray-600">${cluster.date_range || 'N/A'}</td>
+                        <td class="px-2 py-1.5 font-mono text-xs text-gray-700">${cluster.smart_cluster_id || 'N/A'}</td>
+                        <td class="px-2 py-1.5 text-xs text-gray-700">${cluster.algorithm_type || 'N/A'}</td>
+                        <td class="px-2 py-1.5 text-xs text-gray-700 text-center font-semibold">${cluster.patient_count || 0}</td>
+                        <td class="px-2 py-1.5 text-xs text-gray-600">${cluster.most_common_site_code || 'N/A'}</td>
+                        <td class="px-2 py-1.5 text-xs text-gray-600">${cluster.original_creation_date || 'N/A'}</td>
                         <td class="px-2 py-1.5 text-center">
-                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColor} cursor-pointer" 
-                                onclick="updateClusterStatus('${cluster.cluster_id}', '${cluster.accept_status || 'pending'}')" 
-                                title="Click to cycle status">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColor}">
                                 ${cluster.accept_status || 'Pending'}
                             </span>
+                        </td>
+                        <td class="px-2 py-1.5 text-center">
+                            <div class="flex space-x-1 justify-center">
+                                <button onclick="acceptCluster('${cluster.smart_cluster_id}')" 
+                                        class="px-1.5 py-0.5 bg-green-500 hover:bg-green-600 text-white text-xs rounded" 
+                                        title="Accept">✓</button>
+                                <button onclick="rejectCluster('${cluster.smart_cluster_id}')" 
+                                        class="px-1.5 py-0.5 bg-red-500 hover:bg-red-600 text-white text-xs rounded" 
+                                        title="Reject">✗</button>
+                            </div>
                         </td>
                         <td class="px-2 py-1.5 text-xs text-gray-500">${cluster.created_at ? new Date(cluster.created_at).toLocaleString() : 'N/A'}</td>
                     </tr>
@@ -392,14 +478,15 @@
                                 <th class="text-xs font-semibold text-gray-600">Cluster ID</th>
                                 <th class="text-xs font-semibold text-gray-600">Algo</th>
                                 <th class="text-xs font-semibold text-gray-600 text-center">Cases</th>
-                                <th class="text-xs font-semibold text-gray-600">Location</th>
-                                <th class="text-xs font-semibold text-gray-600">Date Range</th>
+                                <th class="text-xs font-semibold text-gray-600">Site Code</th>
+                                <th class="text-xs font-semibold text-gray-600">Creation Date</th>
                                 <th class="text-xs font-semibold text-gray-600 text-center">Status</th>
+                                <th class="text-xs font-semibold text-gray-600 text-center">Actions</th>
                                 <th class="text-xs font-semibold text-gray-600">Created</th>
                             </tr>
                         </thead>
                         <tbody id="tableBody">
-                            <tr><td colspan="7" class="text-center py-6 text-gray-400 text-xs">Loading clusters...</td></tr>
+                            <tr><td colspan="8" class="text-center py-6 text-gray-400 text-xs">Loading clusters...</td></tr>
                         </tbody>
                     </table>
                 </div>

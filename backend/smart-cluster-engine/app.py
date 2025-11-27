@@ -1180,68 +1180,45 @@ def smart_clusters():
     try:
         days = request.args.get('days', type=int)
         
+        # Always use the query with site_code calculation
         if days:
-            query = f"""
-            WITH recent_dates AS (
-                SELECT DISTINCT original_creation_date
-                FROM `{SMART_CLUSTERS_TABLE}`
-                ORDER BY original_creation_date DESC
-                LIMIT {days}
-            )
-            SELECT 
-                c.smart_cluster_id,
-                c.algorithm_type,
-                c.input_date,
-                c.original_creation_date,
-                c.actual_cluster_radius,
-                c.accept_status,
-                c.patient_count,
-                c.primary_syndrome,
-                c.centroid_lat,
-                c.centroid_lon,
-                c.village_name,
-                c.expansion_count,
-                c.created_at
-            FROM `{SMART_CLUSTERS_TABLE}` c
-            JOIN recent_dates r ON c.original_creation_date = r.original_creation_date
-            ORDER BY c.created_at DESC
-            """
-            
-            df = client.query(query.format(days=days)).to_dataframe()
+            date_filter = f"AND c.original_creation_date >= (SELECT DISTINCT original_creation_date FROM `{SMART_CLUSTERS_TABLE}` ORDER BY original_creation_date DESC LIMIT 1 OFFSET {days-1})"
         else:
-            query = f"""
-            WITH cluster_sites AS (
-                SELECT 
-                    a.smart_cluster_id,
-                    p.site_code,
-                    COUNT(*) as site_count,
-                    ROW_NUMBER() OVER (PARTITION BY a.smart_cluster_id ORDER BY COUNT(*) DESC) as rn
-                FROM `{SMART_ASSIGNMENTS_TABLE}` a
-                JOIN `{SOURCE_TABLE}` p ON a.unique_id = p.unique_id
-                WHERE p.site_code IS NOT NULL
-                GROUP BY a.smart_cluster_id, p.site_code
-            )
+            date_filter = ""
+        query = f"""
+        WITH cluster_sites AS (
             SELECT 
-                c.smart_cluster_id,
-                c.algorithm_type,
-                c.input_date,
-                c.original_creation_date,
-                c.actual_cluster_radius,
-                c.accept_status,
-                c.patient_count,
-                c.primary_syndrome,
-                c.centroid_lat,
-                c.centroid_lon,
-                c.village_name,
-                c.expansion_count,
-                c.created_at,
-                cs.site_code as most_common_site_code
-            FROM `{SMART_CLUSTERS_TABLE}` c
-            LEFT JOIN cluster_sites cs ON c.smart_cluster_id = cs.smart_cluster_id AND cs.rn = 1
-            ORDER BY c.created_at DESC
-            """
-            
-            df = client.query(query).to_dataframe()
+                a.smart_cluster_id,
+                p.site_code,
+                COUNT(*) as site_count,
+                ROW_NUMBER() OVER (PARTITION BY a.smart_cluster_id ORDER BY COUNT(*) DESC) as rn
+            FROM `{SMART_ASSIGNMENTS_TABLE}` a
+            JOIN `{SOURCE_TABLE}` p ON a.unique_id = p.unique_id
+            WHERE p.site_code IS NOT NULL
+            GROUP BY a.smart_cluster_id, p.site_code
+        )
+        SELECT 
+            c.smart_cluster_id,
+            c.algorithm_type,
+            c.input_date,
+            c.original_creation_date,
+            c.actual_cluster_radius,
+            c.accept_status,
+            c.patient_count,
+            c.primary_syndrome,
+            c.centroid_lat,
+            c.centroid_lon,
+            c.village_name,
+            c.expansion_count,
+            c.created_at,
+            cs.site_code as most_common_site_code
+        FROM `{SMART_CLUSTERS_TABLE}` c
+        LEFT JOIN cluster_sites cs ON c.smart_cluster_id = cs.smart_cluster_id AND cs.rn = 1
+        WHERE 1=1 {date_filter}
+        ORDER BY c.created_at DESC
+        """
+        
+        df = client.query(query).to_dataframe()
         
         df = client.query(query).to_dataframe()
         
