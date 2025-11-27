@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cluster Detail - Data Management System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        const SMART_ENGINE_URL = 'https://smart-cluster-engine-196547645490.asia-south1.run.app';
+        let clusterData = null;
+        let patientsData = [];
+
+        async function loadClusterDetail() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const clusterId = urlParams.get('id');
+            const clusterDataStr = urlParams.get('data');
+            
+            if (!clusterId) {
+                document.getElementById('content').innerHTML = '<div class="text-center text-red-500 py-8">No cluster ID provided</div>';
+                return;
+            }
+
+            let cluster = null;
+            if (clusterDataStr) {
+                try {
+                    cluster = JSON.parse(clusterDataStr);
+                } catch (e) {
+                    console.error('Error parsing cluster data:', e);
+                }
+            }
+
+            displayClusterInfo(clusterId, cluster);
+            
+            try {
+                const [apiResponse, patientsResponse] = await Promise.all([
+                    fetch(`${SMART_ENGINE_URL}/maps-api-key`),
+                    fetch(`${SMART_ENGINE_URL}/smart-cluster-patients?cluster_id=${clusterId}`)
+                ]);
+                
+                const apiData = await apiResponse.json();
+                const patientsResult = await patientsResponse.json();
+                
+                if (patientsResult.success && patientsResult.patients) {
+                    patientsData = patientsResult.patients;
+                    displayPatients(patientsData);
+                    if (apiData.api_key) {
+                        loadGoogleMaps(apiData.api_key, clusterId);
+                    }
+                } else {
+                    document.getElementById('patientList').innerHTML = '<div class="text-center text-red-500 py-4">No patients found</div>';
+                }
+            } catch (error) {
+                document.getElementById('patientList').innerHTML = `<div class="text-center text-red-500 py-4">Error: ${error.message}</div>`;
+            }
+        }
+
+        function displayClusterInfo(clusterId, cluster) {
+            document.getElementById('clusterId').textContent = clusterId.substring(0, 35) + '...';
+            
+            if (cluster) {
+                const statusColor = cluster.accept_status === 'Accepted' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700';
+                const algorithmColor = cluster.algorithm_type === 'GIS' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700';
+                
+                document.getElementById('clusterDetails').innerHTML = `
+                    <div class="flex flex-wrap items-center gap-3 text-xs">
+                        <span class="px-2 py-1 rounded ${algorithmColor}">${cluster.algorithm_type}</span>
+                        <span class="px-2 py-1 rounded ${statusColor}">${cluster.accept_status}</span>
+                        <span class="text-gray-600"><strong>Patients:</strong> ${cluster.patient_count}</span>
+                        <span class="text-gray-600"><strong>Expansions:</strong> ${cluster.expansion_count}</span>
+                        <span class="text-gray-600"><strong>Syndrome:</strong> ${(cluster.primary_syndrome || 'N/A').substring(0, 30)}${cluster.primary_syndrome && cluster.primary_syndrome.length > 30 ? '...' : ''}</span>
+                        <span class="text-gray-600"><strong>Village:</strong> ${cluster.village_name || 'N/A'}</span>
+                        <span class="text-gray-600"><strong>Site:</strong> ${cluster.most_common_site_code || 'N/A'}</span>
+                        <span class="text-gray-600"><strong>Radius:</strong> ${cluster.actual_cluster_radius ? Math.round(cluster.actual_cluster_radius) + 'm' : '<100m'}</span>
+                        <span class="text-gray-600"><strong>Created:</strong> ${cluster.original_creation_date || 'N/A'}</span>
+                        <span class="text-gray-600"><strong>Coords:</strong> ${cluster.centroid_lat && cluster.centroid_lon ? `${cluster.centroid_lat.toFixed(4)}, ${cluster.centroid_lon.toFixed(4)}` : 'N/A'}</span>
+                    </div>
+                `;
+            }
+        }
+
+        function formatSex(sex) {
+            if (sex === '1' || sex === 1) return 'M';
+            if (sex === '2' || sex === 2) return 'F';
+            return sex || 'N/A';
+        }
+
+        function displayPatients(patients) {
+            const patientList = document.getElementById('patientList');
+            
+            patientList.innerHTML = `
+                <div class="overflow-y-auto h-full">
+                    <table class="min-w-full text-xs">
+                        <thead class="bg-gray-50 sticky top-0">
+                            <tr>
+                                <th class="px-2 py-1 text-left font-medium text-gray-700">Patient ID</th>
+                                <th class="px-2 py-1 text-left font-medium text-gray-700">Name</th>
+                                <th class="px-2 py-1 text-left font-medium text-gray-700">Age</th>
+                                <th class="px-2 py-1 text-left font-medium text-gray-700">Sex</th>
+                                <th class="px-2 py-1 text-left font-medium text-gray-700">Village</th>
+                                <th class="px-2 py-1 text-left font-medium text-gray-700">Type</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            ${patients.map(patient => `
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-2 py-1">${patient.unique_id}</td>
+                                    <td class="px-2 py-1">${patient.patient_name || 'N/A'}</td>
+                                    <td class="px-2 py-1">${patient.pat_age || 'N/A'}</td>
+                                    <td class="px-2 py-1">${formatSex(patient.pat_sex)}</td>
+                                    <td class="px-2 py-1">${patient.villagename || 'N/A'}</td>
+                                    <td class="px-2 py-1">
+                                        <span class="px-1 py-0.5 rounded text-xs ${patient.addition_type === 'ORIGINAL' ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}">
+                                            ${patient.addition_type}
+                                        </span>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function loadGoogleMaps(apiKey, clusterId) {
+            const script = document.createElement('script');
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initMap`;
+            script.async = true;
+            script.defer = true;
+            document.head.appendChild(script);
+        }
+
+        function initMap() {
+            if (patientsData.length === 0) return;
+            
+            // Calculate center from patients with coordinates
+            const validPatients = patientsData.filter(p => p.latitude && p.longitude);
+            if (validPatients.length === 0) return;
+            
+            const centerLat = validPatients.reduce((sum, p) => sum + p.latitude, 0) / validPatients.length;
+            const centerLng = validPatients.reduce((sum, p) => sum + p.longitude, 0) / validPatients.length;
+            
+            const map = new google.maps.Map(document.getElementById('mapContainer'), {
+                center: { lat: centerLat, lng: centerLng },
+                zoom: 15,
+                mapTypeId: 'roadmap',
+                mapTypeControl: false
+            });
+            
+            // Add patient markers
+            validPatients.forEach(patient => {
+                const marker = new google.maps.Marker({
+                    position: { lat: patient.latitude, lng: patient.longitude },
+                    map: map,
+                    icon: {
+                        path: 'M -3,-3 3,-3 3,3 -3,3 z',
+                        scale: 2,
+                        fillColor: patient.addition_type === 'ORIGINAL' ? '#0066CC' : '#00AA00',
+                        fillOpacity: 1,
+                        strokeColor: '#000000',
+                        strokeWeight: 1
+                    },
+                    title: `${patient.unique_id} (${patient.addition_type})`
+                });
+                
+                const infoWindow = new google.maps.InfoWindow({
+                    content: `
+                        <div class="text-xs">
+                            <strong>${patient.unique_id}</strong><br>
+                            ${patient.patient_name || 'N/A'}<br>
+                            Age: ${patient.pat_age || 'N/A'}<br>
+                            Type: ${patient.addition_type}
+                        </div>
+                    `
+                });
+                
+                marker.addListener('click', () => infoWindow.open(map, marker));
+            });
+        }
+
+        window.onload = loadClusterDetail;
+    </script>
+</head>
+<body class="bg-gray-50 font-sans antialiased text-gray-800">
+    <div class="min-h-screen flex flex-col">
+        <!-- Header -->
+        <div class="bg-white border-b p-4">
+            <div class="flex items-center space-x-4 mb-3">
+                <button onclick="window.history.back()" class="flex items-center text-blue-600 hover:text-blue-700 transition-colors">
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                    </svg>
+                    Back
+                </button>
+                <div class="border-l border-gray-300 pl-4">
+                    <h1 class="text-lg font-bold text-gray-900">Cluster Analysis</h1>
+                    <p class="text-gray-500 text-sm" id="clusterId">Loading...</p>
+                </div>
+            </div>
+            <div id="clusterDetails">
+                <!-- Cluster details will be loaded here -->
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="flex-1 flex" id="content">
+            <!-- Patient List Side -->
+            <div class="w-1/2 bg-white border-r">
+                <div class="px-3 py-2 border-b bg-gray-50">
+                    <h2 class="text-sm font-semibold text-gray-900">Patient Line List</h2>
+                </div>
+                <div class="h-full" id="patientList">
+                    <div class="text-center py-8">
+                        <svg class="w-8 h-8 animate-spin mx-auto text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                        <p class="mt-2 text-gray-500">Loading patients...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Map Side -->
+            <div class="w-1/2 relative">
+                <div class="px-3 py-2 border-b bg-gray-50">
+                    <h2 class="text-sm font-semibold text-gray-900">Cluster Map</h2>
+                </div>
+                <div class="text-xs text-gray-500 italic p-2 bg-yellow-50 border-b">
+                    *Note: Cases sharing identical coordinates are spatially offset for visualization.
+                </div>
+                <div id="mapContainer" class="w-full h-full"></div>
+                <div class="absolute bottom-4 right-4 bg-white p-2 rounded shadow text-xs">
+                    <div class="font-semibold mb-1">Legend</div>
+                    <div class="flex items-center mb-1">
+                        <div class="w-3 h-3 bg-blue-600 mr-2"></div>
+                        <span>Original Cases</span>
+                    </div>
+                    <div class="flex items-center">
+                        <div class="w-3 h-3 bg-green-600 mr-2"></div>
+                        <span>Expanded Cases</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

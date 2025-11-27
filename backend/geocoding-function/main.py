@@ -16,9 +16,20 @@ SECRET_NAME = os.getenv('GEOCODING_SECRET_NAME', 'google_map_api_key')
 
 @functions_framework.http
 def geocode_addresses(request):
-    """Cloud Function: Geocode null latitude/longitude records in BigQuery"""
+    """Cloud Function: Geocode addresses or return API key"""
     
-    # Initialize clients
+    # Handle GET request for API key
+    if request.method == 'GET' and request.args.get('key') == 'true':
+        secret_client = secretmanager.SecretManagerServiceClient()
+        try:
+            secret_path = f"projects/{PROJECT_ID}/secrets/{SECRET_NAME}/versions/latest"
+            response = secret_client.access_secret_version(request={"name": secret_path})
+            api_key = response.payload.data.decode("UTF-8")
+            return {"api_key": api_key}, 200
+        except Exception as e:
+            return {"error": f"Failed to get API key: {str(e)}"}, 500
+    
+    # Initialize clients for geocoding
     bq_client = bigquery.Client(project=PROJECT_ID)
     secret_client = secretmanager.SecretManagerServiceClient()
     

@@ -265,45 +265,49 @@ def get_cases():
             'error': str(e)
         }), 500
 
-@app.route('/api/clusters', methods=['GET'])
-def get_clusters():
+
+
+
+
+@app.route('/api/smart-clusters/stats', methods=['GET'])
+def get_smart_cluster_stats():
     try:
-        # Query only temp cluster table
+        # Query smart clusters statistics for last 14 days from max date
         query = f"""
+        WITH max_date AS (
+            SELECT MAX(original_creation_date) as max_date
+            FROM `{PROJECT_ID}.{DATASET_ID}.smart_clusters`
+        )
         SELECT 
-            cluster_id,
-            case_count,
-            district,
-            state,
-            min_date,
-            max_date,
-            accept_status,
-            created_at
-        FROM `{PROJECT_ID}.{DATASET_ID}.temp_cluster_table`
-        ORDER BY created_at DESC
-        LIMIT 100
+            COUNT(*) as total_clusters,
+            COUNTIF(accept_status = 'Accepted') as accepted_clusters,
+            COUNTIF(accept_status = 'Pending') as pending_clusters,
+            SUM(patient_count) as total_patients
+        FROM `{PROJECT_ID}.{DATASET_ID}.smart_clusters` s
+        CROSS JOIN max_date m
+        WHERE s.original_creation_date >= DATE_SUB(m.max_date, INTERVAL 14 DAY)
         """
         
         query_job = client.query(query)
         results = query_job.result()
         
-        clusters_data = []
         for row in results:
-            location = f"{row.district or ''}, {row.state or ''}".strip(', ')
-            date_range = f"{row.min_date} - {row.max_date}" if row.min_date and row.max_date else ''
-            
-            clusters_data.append({
-                'cluster_id': row.cluster_id,
-                'case_count': row.case_count,
-                'location': location,
-                'date_range': date_range,
-                'accept_status': row.accept_status,
-                'created_at': str(row.created_at) if row.created_at else None
-            })
+            stats = {
+                'accepted_clusters': row.accepted_clusters or 0,
+                'pending_clusters': row.pending_clusters or 0,
+                'total_patients': row.total_patients or 0
+            }
+            break
+        else:
+            stats = {
+                'accepted_clusters': 0,
+                'pending_clusters': 0,
+                'total_patients': 0
+            }
         
         return jsonify({
             'success': True,
-            'data': clusters_data
+            'data': stats
         })
         
     except Exception as e:
@@ -311,46 +315,6 @@ def get_clusters():
             'success': False,
             'error': str(e)
         }), 500
-
-@app.route('/api/clusters/update', methods=['POST'])
-def update_cluster_status():
-    try:
-        from flask import request
-        data = request.get_json()
-        
-        cluster_id = data.get('cluster_id')
-        status = data.get('accept_status')
-        
-        # Update cluster status
-        query = f"""
-        UPDATE `{PROJECT_ID}.{DATASET_ID}.temp_cluster_table`
-        SET accept_status = @status,
-            updated_at = CURRENT_TIMESTAMP()
-        WHERE cluster_id = @cluster_id
-        """
-        
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter('status', 'STRING', status),
-                bigquery.ScalarQueryParameter('cluster_id', 'STRING', cluster_id)
-            ]
-        )
-        
-        query_job = client.query(query, job_config=job_config)
-        query_job.result()
-        
-        return jsonify({
-            'success': True,
-            'message': f'Cluster {cluster_id} status updated to {status}'
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
 
 @app.route('/health', methods=['GET'])
 def health_check():

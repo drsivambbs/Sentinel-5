@@ -712,11 +712,13 @@ def expand_gis_cluster(existing_cluster, new_patients, processing_date, new_cent
     """Expand existing GIS cluster with new patients"""
     cluster_id = existing_cluster['smart_cluster_id']
     
-    # Get existing patients
+    # Get existing patients with coordinates
     existing_query = f"""
-    SELECT unique_id
-    FROM `{SMART_ASSIGNMENTS_TABLE}`
-    WHERE smart_cluster_id = @cluster_id
+    SELECT p.unique_id, p.{LATITUDE}, p.{LONGITUDE}
+    FROM `{SMART_ASSIGNMENTS_TABLE}` a
+    JOIN `{SOURCE_TABLE}` p ON a.unique_id = p.unique_id
+    WHERE a.smart_cluster_id = @cluster_id
+      AND p.{LATITUDE} IS NOT NULL AND p.{LONGITUDE} IS NOT NULL
     """
     
     job_config = bigquery.QueryJobConfig(
@@ -737,16 +739,48 @@ def expand_gis_cluster(existing_cluster, new_patients, processing_date, new_cent
         logger.info(f"No new patients to add to GIS cluster {cluster_id}")
         return
     
-    # Calculate new centroid (weighted average)
-    old_count = existing_cluster['patient_count']
-    new_count = len(truly_new_patients)
-    total_count = old_count + new_count
+    # Check if expansion would exceed 1000m radius limit
+    from sklearn.metrics.pairwise import haversine_distances
+    all_coords = []
     
-    old_lat = existing_cluster['centroid_lat']
-    old_lon = existing_cluster['centroid_lon']
+    # Add existing patient coordinates
+    for _, patient in existing_df.iterrows():
+        all_coords.append([patient[LATITUDE], patient[LONGITUDE]])
     
-    weighted_lat = (old_lat * old_count + new_centroid_lat * new_count) / total_count
-    weighted_lon = (old_lon * old_count + new_centroid_lon * new_count) / total_count
+    # Add new patient coordinates
+    for _, patient in new_patients.iterrows():
+        if patient[UNIQUE_ID] in truly_new_patients:
+            all_coords.append([patient[LATITUDE], patient[LONGITUDE]])
+    
+    if len(all_coords) > 0:
+        # Calculate new centroid
+        old_count = existing_cluster['patient_count']
+        new_count = len(truly_new_patients)
+        total_count = old_count + new_count
+        
+        old_lat = existing_cluster['centroid_lat']
+        old_lon = existing_cluster['centroid_lon']
+        
+        weighted_lat = (old_lat * old_count + new_centroid_lat * new_count) / total_count
+        weighted_lon = (old_lon * old_count + new_centroid_lon * new_count) / total_count
+        
+        # Calculate potential new radius
+        all_coords_array = np.array(all_coords)
+        centroid_coords = np.array([[weighted_lat, weighted_lon]])
+        
+        distances = haversine_distances(
+            np.radians(all_coords_array),
+            np.radians(centroid_coords)
+        ) * 6371000
+        
+        potential_radius = float(distances.max())
+        
+        if potential_radius > 1000:
+            logger.info(f"Expansion blocked: radius would be {potential_radius:.1f}m (>1000m limit)")
+            return
+    
+    # Use already calculated values from radius check
+    new_radius = potential_radius
     
     # Add new assignments
     assignments_to_insert = []
@@ -765,7 +799,7 @@ def expand_gis_cluster(existing_cluster, new_patients, processing_date, new_cent
         logger.error(f"Failed to insert GIS assignments: {errors}")
         raise Exception(f"BigQuery insert failed: {len(errors)} assignment errors")
     
-    # Update cluster with new centroid and count
+    # Update cluster with new centroid, count, and radius
     update_query = f"""
     UPDATE `{SMART_CLUSTERS_TABLE}`
     SET 
@@ -773,7 +807,8 @@ def expand_gis_cluster(existing_cluster, new_patients, processing_date, new_cent
         expansion_count = expansion_count + 1,
         input_date = @processing_date,
         centroid_lat = @new_lat,
-        centroid_lon = @new_lon
+        centroid_lon = @new_lon,
+        actual_cluster_radius = @new_radius
     WHERE smart_cluster_id = @cluster_id
     """
     
@@ -783,6 +818,7 @@ def expand_gis_cluster(existing_cluster, new_patients, processing_date, new_cent
             bigquery.ScalarQueryParameter('processing_date', 'DATE', processing_date),
             bigquery.ScalarQueryParameter('new_lat', 'FLOAT64', weighted_lat),
             bigquery.ScalarQueryParameter('new_lon', 'FLOAT64', weighted_lon),
+            bigquery.ScalarQueryParameter('new_radius', 'FLOAT64', new_radius),
             bigquery.ScalarQueryParameter('cluster_id', 'STRING', cluster_id)
         ]
     )
@@ -805,7 +841,7 @@ def expand_gis_cluster(existing_cluster, new_patients, processing_date, new_cent
         logger.error(f"Failed to insert GIS merge history: {errors}")
         raise Exception(f"BigQuery merge history insert failed: {errors}")
     
-    logger.info(f"Expanded GIS {cluster_id}: +{len(truly_new_patients)} patients, -{len(overlap_patients)} overlaps")
+    logger.info(f"Expanded GIS {cluster_id}: +{len(truly_new_patients)} patients, -{len(overlap_patients)} overlaps, radius: {new_radius:.1f}m")
 
 def create_new_gis_cluster(patients_group, processing_date, syndrome, centroid_lat, centroid_lon, radius):
     """Create new GIS cluster"""
@@ -1021,8 +1057,22 @@ def smart_status():
 
 @app.route('/smart-preflight', methods=['GET'])
 def smart_preflight():
-    """Standalone data quality check"""
+    """Standalone data quality check with pending clusters validation"""
     try:
+        # Check for pending clusters
+        pending_query = f"""
+        SELECT COUNT(*) as pending_count
+        FROM `{SMART_CLUSTERS_TABLE}`
+        WHERE algorithm_type = 'GIS' AND accept_status = 'Pending'
+        """
+        
+        try:
+            pending_df = client.query(pending_query).to_dataframe()
+            pending_count = int(pending_df.pending_count[0]) if len(pending_df) > 0 else 0
+        except:
+            pending_count = 0
+        
+        # Get next unprocessed date
         query = f"""
         WITH source_dates AS (
             SELECT DISTINCT {PATIENT_ENTRY_DATE} as date
@@ -1043,17 +1093,25 @@ def smart_preflight():
         
         df = client.query(query).to_dataframe()
         if len(df) == 0:
-            return jsonify({'success': True, 'message': 'All dates processed', 'overall_passed': True})
+            return jsonify({
+                'success': True, 
+                'message': 'All dates processed', 
+                'overall_passed': pending_count == 0,
+                'pending_clusters': pending_count
+            })
         
         test_date = df.date[0].strftime('%Y-%m-%d')
         quality_passed = check_data_quality(test_date)
+        overall_passed = quality_passed and pending_count == 0
         
         return jsonify({
             'success': True,
             'test_date': test_date,
-            'overall_passed': quality_passed,
+            'overall_passed': overall_passed,
+            'data_quality_passed': quality_passed,
+            'pending_clusters': pending_count,
             'geocoding_threshold': GEOCODING_THRESHOLD * 100,
-            'message': 'Data quality check completed'
+            'message': 'Preflight check completed'
         })
         
     except Exception as e:
@@ -1162,6 +1220,284 @@ def smart_config():
             'success': False,
             'message': 'Configuration updates require service restart'
         }), 400
+
+@app.route('/smart-clusters', methods=['GET'])
+def smart_clusters():
+    """Get smart clusters with optional date filtering"""
+    try:
+        days = request.args.get('days', type=int)
+        
+        if days:
+            query = f"""
+            WITH recent_dates AS (
+                SELECT DISTINCT original_creation_date
+                FROM `{SMART_CLUSTERS_TABLE}`
+                ORDER BY original_creation_date DESC
+                LIMIT {days}
+            )
+            SELECT 
+                c.smart_cluster_id,
+                c.algorithm_type,
+                c.input_date,
+                c.original_creation_date,
+                c.actual_cluster_radius,
+                c.accept_status,
+                c.patient_count,
+                c.primary_syndrome,
+                c.centroid_lat,
+                c.centroid_lon,
+                c.village_name,
+                c.expansion_count,
+                c.created_at
+            FROM `{SMART_CLUSTERS_TABLE}` c
+            JOIN recent_dates r ON c.original_creation_date = r.original_creation_date
+            ORDER BY c.created_at DESC
+            """
+            
+            df = client.query(query.format(days=days)).to_dataframe()
+        else:
+            query = f"""
+            WITH cluster_sites AS (
+                SELECT 
+                    a.smart_cluster_id,
+                    p.site_code,
+                    COUNT(*) as site_count,
+                    ROW_NUMBER() OVER (PARTITION BY a.smart_cluster_id ORDER BY COUNT(*) DESC) as rn
+                FROM `{SMART_ASSIGNMENTS_TABLE}` a
+                JOIN `{SOURCE_TABLE}` p ON a.unique_id = p.unique_id
+                WHERE p.site_code IS NOT NULL
+                GROUP BY a.smart_cluster_id, p.site_code
+            )
+            SELECT 
+                c.smart_cluster_id,
+                c.algorithm_type,
+                c.input_date,
+                c.original_creation_date,
+                c.actual_cluster_radius,
+                c.accept_status,
+                c.patient_count,
+                c.primary_syndrome,
+                c.centroid_lat,
+                c.centroid_lon,
+                c.village_name,
+                c.expansion_count,
+                c.created_at,
+                cs.site_code as most_common_site_code
+            FROM `{SMART_CLUSTERS_TABLE}` c
+            LEFT JOIN cluster_sites cs ON c.smart_cluster_id = cs.smart_cluster_id AND cs.rn = 1
+            ORDER BY c.created_at DESC
+            """
+            
+            df = client.query(query).to_dataframe()
+        
+        df = client.query(query).to_dataframe()
+        
+        if len(df) == 0:
+            return jsonify({
+                'success': True,
+                'clusters': [],
+                'total_count': 0
+            })
+        
+        clusters = []
+        for _, row in df.iterrows():
+            clusters.append({
+                'smart_cluster_id': row['smart_cluster_id'],
+                'algorithm_type': row['algorithm_type'],
+                'input_date': row['input_date'].isoformat() if pd.notna(row['input_date']) else None,
+                'original_creation_date': row['original_creation_date'].isoformat() if pd.notna(row['original_creation_date']) else None,
+                'actual_cluster_radius': float(row['actual_cluster_radius']) if pd.notna(row['actual_cluster_radius']) else None,
+                'accept_status': row['accept_status'],
+                'patient_count': int(row['patient_count']),
+                'primary_syndrome': row['primary_syndrome'],
+                'centroid_lat': float(row['centroid_lat']) if pd.notna(row['centroid_lat']) else None,
+                'centroid_lon': float(row['centroid_lon']) if pd.notna(row['centroid_lon']) else None,
+                'village_name': row['village_name'] if pd.notna(row['village_name']) else None,
+                'expansion_count': int(row['expansion_count']),
+                'created_at': row['created_at'].isoformat() if pd.notna(row['created_at']) else None,
+                'most_common_site_code': row['most_common_site_code'] if pd.notna(row['most_common_site_code']) else None
+            })
+        
+        return jsonify({
+            'success': True,
+            'clusters': clusters,
+            'total_count': len(clusters)
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/smart-cluster-patients', methods=['GET'])
+def smart_cluster_patients():
+    """Get patients in a specific cluster"""
+    try:
+        cluster_id = request.args.get('cluster_id')
+        if not cluster_id:
+            return jsonify({'success': False, 'error': 'cluster_id parameter required'}), 400
+        
+        query = f"""
+        SELECT 
+            p.unique_id,
+            p.patient_entry_date,
+            p.patient_name,
+            p.pat_age,
+            p.pat_sex,
+            p.villagename,
+            p.statename,
+            p.districtname,
+            p.clini_primary_syn,
+            p.latitude,
+            p.longitude,
+            p.site_code,
+            a.addition_type,
+            a.expansion_date,
+            a.assigned_at
+        FROM `{SMART_ASSIGNMENTS_TABLE}` a
+        JOIN `{SOURCE_TABLE}` p ON a.unique_id = p.unique_id
+        WHERE a.smart_cluster_id = @cluster_id
+        ORDER BY a.assigned_at ASC
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter('cluster_id', 'STRING', cluster_id)
+            ]
+        )
+        
+        df = client.query(query, job_config=job_config).to_dataframe()
+        
+        if len(df) == 0:
+            return jsonify({
+                'success': True,
+                'patients': [],
+                'patient_count': 0
+            })
+        
+        patients = []
+        for _, row in df.iterrows():
+            patients.append({
+                'unique_id': row['unique_id'],
+                'patient_entry_date': row['patient_entry_date'].isoformat() if pd.notna(row['patient_entry_date']) else None,
+                'patient_name': row['patient_name'] if pd.notna(row['patient_name']) else None,
+                'pat_age': int(row['pat_age']) if pd.notna(row['pat_age']) else None,
+                'pat_sex': row['pat_sex'] if pd.notna(row['pat_sex']) else None,
+                'villagename': row['villagename'] if pd.notna(row['villagename']) else None,
+                'statename': row['statename'] if pd.notna(row['statename']) else None,
+                'districtname': row['districtname'] if pd.notna(row['districtname']) else None,
+                'clini_primary_syn': row['clini_primary_syn'] if pd.notna(row['clini_primary_syn']) else None,
+                'latitude': float(row['latitude']) if pd.notna(row['latitude']) else None,
+                'longitude': float(row['longitude']) if pd.notna(row['longitude']) else None,
+                'site_code': row['site_code'] if pd.notna(row['site_code']) else None,
+                'addition_type': row['addition_type'],
+                'expansion_date': row['expansion_date'].isoformat() if pd.notna(row['expansion_date']) else None,
+                'assigned_at': row['assigned_at'].isoformat() if pd.notna(row['assigned_at']) else None
+            })
+        
+        return jsonify({
+            'success': True,
+            'patients': patients,
+            'patient_count': len(patients),
+            'cluster_id': cluster_id
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/maps-api-key', methods=['GET'])
+def maps_api_key():
+    """Get Google Maps API key from Secret Manager"""
+    try:
+        from google.cloud import secretmanager
+        secret_client = secretmanager.SecretManagerServiceClient()
+        secret_path = f"projects/{PROJECT_ID}/secrets/google_map_api_key/versions/latest"
+        response = secret_client.access_secret_version(request={"name": secret_path})
+        api_key = response.payload.data.decode("UTF-8")
+        return jsonify({'success': True, 'api_key': api_key})
+    except Exception as e:
+        logger.error(f"Failed to get Maps API key: {str(e)}")
+        return jsonify({'success': False, 'error': f'Secret Manager error: {str(e)}'}), 500
+
+@app.route('/accept-cluster', methods=['POST'])
+def accept_cluster():
+    """Accept a pending cluster"""
+    try:
+        data = request.get_json()
+        cluster_id = data.get('cluster_id')
+        
+        if not cluster_id:
+            return jsonify({'success': False, 'error': 'cluster_id required'}), 400
+        
+        # Update cluster status to Accepted
+        update_query = f"""
+        UPDATE `{SMART_CLUSTERS_TABLE}`
+        SET accept_status = 'Accepted'
+        WHERE smart_cluster_id = @cluster_id
+          AND accept_status = 'Pending'
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter('cluster_id', 'STRING', cluster_id)
+            ]
+        )
+        
+        result = client.query(update_query, job_config=job_config)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Cluster {cluster_id} accepted successfully',
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/reject-cluster', methods=['POST'])
+def reject_cluster():
+    """Reject and delete a pending cluster"""
+    try:
+        data = request.get_json()
+        cluster_id = data.get('cluster_id')
+        
+        if not cluster_id:
+            return jsonify({'success': False, 'error': 'cluster_id required'}), 400
+        
+        # Delete cluster assignments first
+        delete_assignments_query = f"""
+        DELETE FROM `{SMART_ASSIGNMENTS_TABLE}`
+        WHERE smart_cluster_id = @cluster_id
+        """
+        
+        # Delete cluster record
+        delete_cluster_query = f"""
+        DELETE FROM `{SMART_CLUSTERS_TABLE}`
+        WHERE smart_cluster_id = @cluster_id
+          AND accept_status = 'Pending'
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter('cluster_id', 'STRING', cluster_id)
+            ]
+        )
+        
+        client.query(delete_assignments_query, job_config=job_config)
+        client.query(delete_cluster_query, job_config=job_config)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Cluster {cluster_id} rejected and deleted successfully',
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 @app.route('/smart-truncate', methods=['POST'])
 def smart_truncate():
