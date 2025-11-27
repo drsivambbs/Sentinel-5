@@ -6,32 +6,27 @@
     <title>Data Management System</title>
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Papa Parse for CSV processing -->
-    <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
-    <!-- CSV Validation Component -->
-    <script src="js/csv_validate.js"></script>
+    <!-- Load PapaParse for CSV parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <style>
         /* Custom scrollbar for aesthetics */
         .custom-scroll::-webkit-scrollbar {
-            width: 8px;
+            width: 6px;
         }
         .custom-scroll::-webkit-scrollbar-thumb {
             background-color: #cbd5e1;
-            border-radius: 4px;
+            border-radius: 3px;
         }
         .custom-scroll::-webkit-scrollbar-track {
             background: #f1f5f9;
         }
-        /* Fix for main content overflow in nested flex containers */
-        #cluster, #merge {
-            min-height: 100%;
-        }
+
         /* Sidebar collapse styles */
         #sidebar {
             transition: width 0.3s ease, padding 0.3s ease;
         }
         #sidebar.collapsed {
-            width: 4rem;
+            width: 3rem;
         }
         #sidebar.collapsed .nav-text,
         #sidebar.collapsed h2,
@@ -65,15 +60,6 @@
             border-left: 0;
             border-right: 0;
         }
-        #sidebar.collapsed .upload-container {
-            padding-left: 0.75rem;
-            padding-right: 0.75rem;
-        }
-        #sidebar.collapsed .upload-container .nav-text {
-            opacity: 0;
-            width: 0;
-            overflow: hidden;
-        }
     </style>
     <script>
         tailwind.config = {
@@ -100,85 +86,12 @@
         // Initialize application
         window.onload = function() {
             console.log('Application loaded');
-            initializeUpload();
-            loadGeocodingStatus();
-            // Refresh geocoding status every 30 seconds
-            setInterval(loadGeocodingStatus, 30000);
         };
-        
-        // CSV Upload functionality
-        function initializeUpload() {
-            const fileInput = document.getElementById('csvFileInput');
-            const uploadStatus = document.getElementById('uploadStatus');
-            const uploadResult = document.getElementById('uploadResult');
-            
-            fileInput.addEventListener('change', function(event) {
-                const file = event.target.files[0];
-                if (!file) return;
-                
-                if (!file.name.toLowerCase().endsWith('.csv')) {
-                    showNotification('Please select a CSV file', 'warning');
-                    return;
-                }
-                
-                // Show upload status
-                uploadStatus.classList.remove('hidden');
-                uploadResult.classList.add('hidden');
-                
-                // Use CSV validation component
-                validateAndUploadCSV(file, uploadStatus, uploadResult, showNotification);
-                
-                // Clear file input
-                fileInput.value = '';
-                
-                // Hide result after 5 seconds
-                setTimeout(() => {
-                    uploadResult.classList.add('hidden');
-                }, 5000);
-            });
-        }
         
         window.toggleSidebar = function() {
             document.getElementById('sidebar').classList.toggle('collapsed');
         }
-        window.addMergeItem = async function() {
-            const title = document.getElementById('mergeItemTitle').value.trim();
-            const content = document.getElementById('mergeItemContent').value.trim();
-            closeModal('addMergeModal');
 
-            if (!title || !content || !window.currentMergeType || !db || !userId) {
-                showNotification('Title and Content cannot be empty or user not authenticated.', 'warning');
-                return;
-            }
-            
-            try {
-                const mergeCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/merge_items`);
-                await setDoc(doc(mergeCollectionRef), {
-                    title: title,
-                    content: content,
-                    type: window.currentMergeType, // 'urban' or 'rural'
-                    created: serverTimestamp()
-                });
-                showNotification(`${window.currentMergeType.toUpperCase()} item added.`, 'success');
-                document.getElementById('mergeItemTitle').value = '';
-                document.getElementById('mergeItemContent').value = '';
-            } catch (e) {
-                console.error("Error adding merge item: ", e);
-                showNotification('Error adding item.', 'danger');
-            }
-        }
-
-        window.deleteMergeItem = async function(id) {
-            if (!db || !userId) return;
-            try {
-                const mergeDocRef = doc(db, `artifacts/${appId}/users/${userId}/merge_items`, id);
-                await deleteDoc(mergeDocRef);
-                showNotification('Merge item deleted.', 'success');
-            } catch (e) {
-                console.error("Error deleting merge item: ", e);
-                showNotification('Error deleting item.', 'danger');
-            }
-        }
 
         // SETTINGS OPERATIONS
         // Removed global settingsDocPath definition
@@ -300,219 +213,8 @@
             }).join('');
         }
 
-        function updateMergeContainers(urbanItems, ruralItems) {
-            updateSingleMergeContainer('urbanContainer', urbanItems, 'bg-primary/10 border-primary/40');
-            updateSingleMergeContainer('ruralContainer', ruralItems, 'bg-success/10 border-success/40');
-        }
 
-        function updateSingleMergeContainer(containerId, items, colorClasses) {
-            const container = document.getElementById(containerId);
-            
-            if (items.length === 0) {
-                container.innerHTML = '<div class="text-center text-gray-400 p-4 text-sm">No items yet</div>';
-                return;
-            }
-            
-            // Sort by creation time (newest first)
-            items.sort((a, b) => (b.created?.seconds || 0) - (a.created?.seconds || 0));
 
-            container.innerHTML = items.map(item => {
-                const createdTime = item.created ? new Date(item.created.seconds * 1000).toLocaleString() : 'N/A';
-                const baseClasses = "p-3 rounded-lg border-l-4 shadow-sm";
-
-                return `
-                    <div class="${baseClasses} ${colorClasses} break-words">
-                        <div class="flex justify-between items-start mb-2">
-                            <strong class="text-sm text-gray-800">${item.title}</strong>
-                            <button onclick="deleteMergeItem('${item.id}')" class="bg-danger hover:bg-red-600 text-white px-2 py-0.5 text-xs rounded-md transition-colors ml-2">X</button>
-                        </div>
-                        <p class="text-xs text-gray-600 mb-1">${item.content}</p>
-                        <small class="text-xs text-gray-500 block">${createdTime}</small>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        // --- Clustering Readiness Functions ---
-        
-        window.showClusteringReadinessModal = function() {
-            document.getElementById('clusteringModal').classList.remove('hidden');
-            document.getElementById('clusteringModalContent').innerHTML = 
-                '<div class="text-center py-4"><div class="animate-spin h-6 w-6 border-2 border-purple-600 border-t-transparent rounded-full mx-auto mb-2"></div>Checking clustering readiness...</div>';
-            checkClusteringReadiness();
-        }
-        
-        async function checkClusteringReadiness() {
-            try {
-                showNotification('Checking clustering readiness...', 'primary');
-                
-                // Simulate the preflight check data since CORS blocks direct access
-                const mockData = {
-                    success: true,
-                    overall_passed: false,
-                    geocoding_check: false,
-                    buffer_check: true,
-                    message: 'Preflight check failed',
-                    details: {
-                        total_days_checked: 15,
-                        days_ready: 12,
-                        avg_daily_pct: 81.78,
-                        min_daily_pct: 0.0,
-                        threshold_required: 85.0,
-                        buffer_info: {}
-                    }
-                };
-                
-                displayClusteringReadiness(mockData);
-                showNotification('Clustering readiness check completed', 'success');
-                
-            } catch (error) {
-                console.error('Error checking clustering readiness:', error);
-                document.getElementById('clusteringModalContent').innerHTML = 
-                    '<div class="text-center text-red-500 py-4">Failed to check clustering readiness</div>';
-                showNotification('Failed to check clustering readiness', 'danger');
-            }
-        }
-        
-        function displayClusteringReadiness(data) {
-            const container = document.getElementById('clusteringModalContent');
-            const details = data.details;
-            
-            const statusColor = data.overall_passed ? 'text-green-600' : 'text-red-600';
-            const statusBg = data.overall_passed ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200';
-            const statusIcon = data.overall_passed ? '✓' : '✗';
-            
-            container.innerHTML = `
-                <div class="${statusBg} border rounded-lg p-4 mb-4">
-                    <div class="flex items-center mb-2">
-                        <span class="${statusColor} text-xl font-bold mr-2">${statusIcon}</span>
-                        <span class="${statusColor} font-semibold">${data.message}</span>
-                    </div>
-                    <div class="text-sm text-gray-600">
-                        ${data.overall_passed ? 'All systems ready for clustering' : 'Some requirements not met'}
-                    </div>
-                </div>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="border rounded-lg p-3">
-                        <div class="flex items-center justify-between mb-2">
-                            <span class="text-sm font-medium text-gray-700">Daily Geocoding</span>
-                            <span class="${data.geocoding_check ? 'text-green-600' : 'text-red-600'} text-sm font-bold">
-                                ${data.geocoding_check ? '✓' : '✗'}
-                            </span>
-                        </div>
-                        <div class="text-xs text-gray-500 space-y-1">
-                            <div>Days Ready: ${details.days_ready}/${details.total_days_checked}</div>
-                            <div>Average: ${details.avg_daily_pct.toFixed(1)}%</div>
-                            <div>Minimum: ${details.min_daily_pct.toFixed(1)}%</div>
-                            <div>Required: ${details.threshold_required}%</div>
-                        </div>
-                    </div>
-                    
-                    <div class="border rounded-lg p-3">
-                        <div class="flex items-center justify-between mb-2">
-                            <span class="text-sm font-medium text-gray-700">Buffer Status</span>
-                            <span class="${data.buffer_check ? 'text-green-600' : 'text-red-600'} text-sm font-bold">
-                                ${data.buffer_check ? '✓' : '✗'}
-                            </span>
-                        </div>
-                        <div class="text-xs text-gray-500">
-                            ${data.buffer_check ? 'No recent activity' : 'Recent insertions detected'}
-                            ${details.buffer_info.recent_inserts ? `<br>Recent inserts: ${details.buffer_info.recent_inserts}` : ''}
-                        </div>
-                    </div>
-                </div>
-                
-                ${!data.overall_passed ? `
-                <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <div class="text-sm font-medium text-yellow-800 mb-1">Recommendations:</div>
-                    <div class="text-xs text-yellow-700">
-                        ${!data.geocoding_check ? '• Run geocoding service to improve daily coverage<br>' : ''}
-                        ${!data.buffer_check ? '• Wait for recent data insertions to settle<br>' : ''}
-                        • Check back in a few minutes after geocoding completes
-                    </div>
-                </div>
-                ` : ''}
-            `;
-        }
-        
-        // --- Geocoding Functions ---
-        
-        async function loadGeocodingStatus() {
-            try {
-                const response = await fetch('https://sentinel-dashboard-api-196547645490.asia-south1.run.app/api/dashboard/stats');
-                const data = await response.json();
-                
-                if (data.success) {
-                    const stats = data.data;
-                    const geocodingPct = stats.geocoded_percentage || 0;
-                    
-                    document.getElementById('geocodingPercentage').textContent = geocodingPct.toFixed(1) + '%';
-                    document.getElementById('geocodedCount').textContent = stats.geocoded_cases || 0;
-                    document.getElementById('totalUrban').textContent = stats.urban_cases || 0;
-                    document.getElementById('geocodingProgress').style.width = geocodingPct + '%';
-                    
-                    const clusteringStatusEl = document.getElementById('clusteringStatus');
-                    if (geocodingPct >= 85.0) {
-                        clusteringStatusEl.textContent = 'Clustering ready';
-                        clusteringStatusEl.className = 'text-green-500';
-                    } else {
-                        clusteringStatusEl.textContent = `Need ${(85.0 - geocodingPct).toFixed(1)}% more`;
-                        clusteringStatusEl.className = 'text-red-500';
-                    }
-                } else {
-                    document.getElementById('geocodingPercentage').textContent = 'Error';
-                }
-                
-                // Load smart cluster stats
-                loadSmartClusterStats();
-                
-            } catch (error) {
-                console.error('Error loading geocoding status:', error);
-                document.getElementById('geocodingPercentage').textContent = 'Error';
-            }
-        }
-        
-        async function loadSmartClusterStats() {
-            try {
-                const response = await fetch('https://sentinel-dashboard-api-196547645490.asia-south1.run.app/api/smart-clusters/stats');
-                const data = await response.json();
-                
-                if (data.success) {
-                    const stats = data.data;
-                    document.getElementById('acceptedClusters').textContent = stats.accepted_clusters || 0;
-                    document.getElementById('pendingClusters').textContent = stats.pending_clusters || 0;
-                } else {
-                    document.getElementById('acceptedClusters').textContent = 'Error';
-                    document.getElementById('pendingClusters').textContent = 'Error';
-                }
-            } catch (error) {
-                console.error('Error loading smart cluster stats:', error);
-                document.getElementById('acceptedClusters').textContent = 'Error';
-                document.getElementById('pendingClusters').textContent = 'Error';
-            }
-        }
-        
-        async function triggerGeocoding() {
-            try {
-                showNotification('Triggering geocoding service...', 'primary');
-                const response = await fetch('https://asia-south1-sentinel-h-5.cloudfunctions.net/geocode-addresses', {
-                    method: 'POST'
-                });
-                
-                if (response.ok) {
-                    showNotification('Geocoding service triggered successfully', 'success');
-                    // Refresh status after 5 seconds
-                    setTimeout(loadGeocodingStatus, 5000);
-                } else {
-                    showNotification('Failed to trigger geocoding service', 'danger');
-                }
-            } catch (error) {
-                console.error('Error triggering geocoding:', error);
-                showNotification('Error triggering geocoding service', 'danger');
-            }
-        }
-        
         // --- General UI Utilities ---
         
         window.toggleSidebar = function() {
@@ -571,19 +273,6 @@
 
         window.closeModal = function(modalId) {
             document.getElementById(modalId).classList.add('hidden');
-            if (modalId === 'addClusterModal') {
-                document.getElementById('clusterData').value = '';
-            } else if (modalId === 'addMergeModal') {
-                document.getElementById('mergeItemTitle').value = '';
-                document.getElementById('mergeItemContent').value = '';
-                window.currentMergeType = '';
-            }
-        }
-
-        window.showAddMergeModal = function(type) {
-            window.currentMergeType = type;
-            document.getElementById('mergeModalTitle').textContent = `Add ${type.charAt(0).toUpperCase() + type.slice(1)} Item`;
-            document.getElementById('addMergeModal').classList.remove('hidden');
         }
 
         // Notification System
@@ -617,155 +306,220 @@
     <div class="flex h-screen overflow-hidden">
         <!-- Sidebar -->
         <div class="h-screen">
-            <div id="sidebar" class="sidebar w-60 bg-white shadow-xl my-4 ml-4 mr-0 rounded-xl flex flex-col transition-all duration-300 custom-scroll overflow-y-auto h-[calc(100vh-2rem)]">
+            <div id="sidebar" class="sidebar w-48 bg-white shadow-lg my-2 ml-2 mr-0 rounded-lg flex flex-col transition-all duration-300 custom-scroll overflow-y-auto h-[calc(100vh-1rem)]">
                 
-                <div class="px-5 pt-5 pb-3 flex justify-between items-center border-b border-gray-200">
-                    <h2 class="text-xl font-bold text-gray-800 whitespace-nowrap">DataFlow</h2>
+                <div class="px-3 pt-3 pb-2 flex justify-between items-center border-b border-gray-200">
+                    <h2 class="text-base font-bold text-gray-800 whitespace-nowrap">Sentinel-5</h2>
                     <button class="text-gray-500 hover:text-gray-900 focus:outline-none flex-shrink-0" onclick="toggleSidebar()">
-                        <span id="sidebar-toggle-icon">
-                            <!-- Menu icon -->
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
-                        </span>
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
                     </button>
                 </div>
                 
-                <div class="py-2 flex-grow">
-                    <div class="nav-item p-3 mx-3 my-1 rounded-lg cursor-pointer transition-colors hover:bg-gray-100 border-l-4 border-transparent active-item bg-primary/10 border-primary font-semibold flex items-center" data-section="dashboard">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                        <span class="nav-text ml-3">Dashboard</span>
+                <div class="py-1 flex-grow">
+                    <div class="nav-item p-2 mx-2 my-0.5 rounded cursor-pointer transition-colors hover:bg-gray-100 border-l-2 border-transparent active-item bg-primary/10 border-primary font-semibold flex items-center" data-section="dashboard">
+                        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        <span class="nav-text ml-2 text-sm">Dashboard</span>
                     </div>
-                    <div class="nav-item p-3 mx-3 my-1 rounded-lg cursor-pointer transition-colors hover:bg-gray-100 border-l-4 border-transparent flex items-center" onclick="window.location.href='cluster-engine.html'">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 3-3m-6 6l3 3 3-3"></path></svg>
-                        <span class="nav-text ml-3">Cluster Engine</span>
+                    <div class="nav-item p-2 mx-2 my-0.5 rounded cursor-pointer transition-colors hover:bg-gray-100 border-l-2 border-transparent flex items-center" onclick="window.location.href='data-import.html'">
+                        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                        <span class="nav-text ml-2 text-sm">Data Import</span>
                     </div>
-                    <div class="nav-item p-3 mx-3 my-1 rounded-lg cursor-pointer transition-colors hover:bg-gray-100 border-l-4 border-transparent flex items-center" onclick="window.location.href='cluster-linelist.html'">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
-                        <span class="nav-text ml-3">Cluster Line List</span>
+                    <div class="nav-item p-2 mx-2 my-0.5 rounded cursor-pointer transition-colors hover:bg-gray-100 border-l-2 border-transparent flex items-center" onclick="window.location.href='clusters-view.html'">
+                        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                        <span class="nav-text ml-2 text-sm">Clusters</span>
                     </div>
-
-                    <div class="nav-item p-3 mx-3 my-1 rounded-lg cursor-pointer transition-colors hover:bg-gray-100 border-l-4 border-transparent flex items-center" onclick="window.location.href='settings.html'">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                        <span class="nav-text ml-3">Settings</span>
+                    <div class="nav-item p-2 mx-2 my-0.5 rounded cursor-pointer transition-colors hover:bg-gray-100 border-l-2 border-transparent flex items-center" onclick="window.location.href='cluster-engine.html'">
+                        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 3-3m-6 6l3 3 3-3"></path></svg>
+                        <span class="nav-text ml-2 text-sm">Cluster Engine</span>
                     </div>
-                </div>
-                
-                <!-- Upload Container -->
-                <div class="upload-container px-3 py-4 border-t border-gray-200">
-                    <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
-                        <div class="flex items-center mb-3">
-                            <svg class="w-5 h-5 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
-                            </svg>
-                            <h3 class="nav-text text-sm font-semibold text-blue-800 ml-2">CSV Upload</h3>
-                        </div>
-                        <div class="nav-text space-y-3">
-                            <input type="file" id="csvFileInput" accept=".csv" class="hidden">
-                            <button onclick="document.getElementById('csvFileInput').click()" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 px-3 rounded-md transition-colors shadow-sm">
-                                Select CSV File
-                            </button>
-                            <div id="uploadStatus" class="text-xs text-gray-600 text-center hidden">
-                                <div class="flex items-center justify-center">
-                                    <svg class="animate-spin -ml-1 mr-2 h-3 w-3 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                    Uploading...
-                                </div>
-                            </div>
-                            <div id="uploadResult" class="text-xs text-center hidden"></div>
-                        </div>
+                    <div class="nav-item p-2 mx-2 my-0.5 rounded cursor-pointer transition-colors hover:bg-gray-100 border-l-2 border-transparent flex items-center" data-section="reports">
+                        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        <span class="nav-text ml-2 text-sm">Export Reports</span>
+                    </div>
+                    <div class="nav-item p-2 mx-2 my-0.5 rounded cursor-pointer transition-colors hover:bg-gray-100 border-l-2 border-transparent flex items-center" data-section="settings">
+                        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                        <span class="nav-text ml-2 text-sm">Settings</span>
                     </div>
                 </div>
                 
-                <div class="px-5 py-3 border-t border-gray-200">
-                    <p id="userIdDisplay" class="text-xs text-gray-500 truncate">Loading user...</p>
+                <div class="px-3 py-2 border-t border-gray-200">
+                    <p id="userIdDisplay" class="text-xs text-gray-500 truncate">Local Mode</p>
                 </div>
             </div>
         </div>
 
         <!-- Main Content Area -->
-        <div class="main-content flex-1 p-4 overflow-y-auto h-screen">
+        <div class="main-content flex-1 p-2 custom-scroll">
             
             <!-- Dashboard Section -->
-            <div class="section flex flex-col h-full space-y-4" id="dashboard">
-                <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
-                <p class="text-gray-500 -mt-2 text-sm">Real-time overview of your data management activity.</p>
-                
-                <!-- Stats Grid -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-                    <div class="bg-white p-2 rounded-lg shadow border-l-4 border-primary">
-                        <h4 class="text-xs font-semibold text-gray-500">Total Records</h4>
-                        <div class="text-xl font-bold text-gray-800" id="totalRecords">0</div>
-                    </div>
-                    <div class="bg-white p-2 rounded-lg shadow border-l-4 border-warning">
-                        <h4 class="text-xs font-semibold text-gray-500">Active Clusters</h4>
-                        <div class="text-xl font-bold text-gray-800" id="totalClusters">0</div>
-                    </div>
-                    <div class="bg-white p-2 rounded-lg shadow border-l-4 border-success">
-                        <h4 class="text-xs font-semibold text-gray-500">Accepted Clusters</h4>
-                        <div class="text-xl font-bold text-gray-800" id="acceptedClusters">0</div>
-                        <div class="text-xs text-gray-400">(Last 14 days)</div>
-                    </div>
-                    <div class="bg-white p-2 rounded-lg shadow border-l-4 border-orange-500">
-                        <h4 class="text-xs font-semibold text-gray-500">Pending Clusters</h4>
-                        <div class="text-xl font-bold text-gray-800" id="pendingClusters">0</div>
-                        <div class="text-xs text-gray-400">(Last 14 days)</div>
-                    </div>
-                    <div class="bg-white p-2 rounded-lg shadow border-l-4 border-indigo-500">
-                        <div class="flex justify-between items-center">
-                            <h4 class="text-xs font-semibold text-gray-500">Geocoding Status</h4>
-                            <button onclick="triggerGeocoding()" class="text-xs bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-1 py-0.5 rounded transition-colors" title="Trigger geocoding service">
-                                ⟳
-                            </button>
-                        </div>
-                        <div class="text-xl font-bold text-gray-800" id="geocodingPercentage">--</div>
-                        <div class="text-xs text-gray-400">
-                            <span id="geocodedCount">--</span> / <span id="totalUrban">--</span> urban
-                        </div>
-                        <div class="mt-1">
-                            <div class="w-full bg-gray-200 rounded-full h-1.5">
-                                <div id="geocodingProgress" class="bg-indigo-500 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
-                            </div>
-                        </div>
-                        <div class="text-xs mt-1">
-                            <span id="clusteringStatus" class="text-red-500">Clustering blocked</span>
-                        </div>
+            <div class="section flex flex-col h-full" id="dashboard">
+                <div class="flex items-center justify-center h-full">
+                    <div class="text-center">
+                        <h1 class="text-2xl font-bold text-gray-800 mb-2">Sentinel-5 Dashboard</h1>
+                        <p class="text-sm text-gray-500">Select an option from the sidebar to get started</p>
                     </div>
                 </div>
-
-
-
-
             </div>
 
+            <script>
+                const API_ENDPOINT = 'https://sentinel-upload-service-196547645490.asia-south1.run.app';
+                const referenceSchema = [{"column_name":"patient_id","data_type":"INT64"},{"column_name":"site_code","data_type":"STRING"},{"column_name":"hospital_reg_id","data_type":"STRING"},{"column_name":"patient_entry_date","data_type":"DATE"},{"column_name":"pat_admi_location","data_type":"INT64"},{"column_name":"patient_name","data_type":"STRING"},{"column_name":"pat_mid_name","data_type":"STRING"},{"column_name":"pat_sodo","data_type":"STRING"},{"column_name":"pat_age","data_type":"INT64"},{"column_name":"pat_agemonths","data_type":"STRING"},{"column_name":"pat_agedays","data_type":"INT64"},{"column_name":"pat_sex","data_type":"INT64"},{"column_name":"pat_contact_his","data_type":"INT64"},{"column_name":"pat_health_worker","data_type":"INT64"},{"column_name":"pat_hw_contact","data_type":"INT64"},{"column_name":"pat_travel_his","data_type":"INT64"},{"column_name":"pat_travel_type","data_type":"INT64"},{"column_name":"pat_travel_int","data_type":"STRING"},{"column_name":"pat_travel_dom","data_type":"INT64"},{"column_name":"pat_country","data_type":"STRING"},{"column_name":"statename","data_type":"STRING"},{"column_name":"districtname","data_type":"STRING"},{"column_name":"subdistrictname","data_type":"STRING"},{"column_name":"villagename","data_type":"STRING"},{"column_name":"latitude","data_type":"FLOAT64"},{"column_name":"longitude","data_type":"FLOAT64"},{"column_name":"pat_street","data_type":"STRING"},{"column_name":"pat_house","data_type":"STRING"},{"column_name":"pat_pincode","data_type":"INT64"},{"column_name":"pat_areatype","data_type":"STRING"},{"column_name":"pat_occupation","data_type":"INT64"},{"column_name":"pat_occupation_others","data_type":"STRING"},{"column_name":"clini_date_illness","data_type":"STRING"},{"column_name":"clini_dura_days","data_type":"INT64"},{"column_name":"clini_primary_syn","data_type":"STRING"},{"column_name":"syndrome_other_p","data_type":"STRING"},{"column_name":"sym_fever","data_type":"BOOL"},{"column_name":"sym_new_onset_of_seizures","data_type":"BOOL"},{"column_name":"sym_dysentery","data_type":"BOOL"},{"column_name":"sym_jaundice","data_type":"BOOL"},{"column_name":"sym_papule_rash","data_type":"BOOL"},{"column_name":"sym_vomiting","data_type":"BOOL"},{"column_name":"sym_myalgia","data_type":"BOOL"},{"column_name":"sym_breathlessness","data_type":"BOOL"},{"column_name":"sym_sore_throat","data_type":"BOOL"},{"column_name":"sym_cough","data_type":"BOOL"},{"column_name":"sym_yellow_urine","data_type":"BOOL"},{"column_name":"sym_yellow_skin","data_type":"BOOL"},{"column_name":"sym_eschar","data_type":"STRING"},{"column_name":"sym_altered_sensorium","data_type":"BOOL"},{"column_name":"sym_increased_somnolence","data_type":"BOOL"},{"column_name":"sym_dark_urine","data_type":"BOOL"},{"column_name":"sym_yellow_sclera","data_type":"BOOL"},{"column_name":"sym_nausea","data_type":"BOOL"},{"column_name":"sym_irritability","data_type":"BOOL"},{"column_name":"sym_diarrhea","data_type":"BOOL"},{"column_name":"sym_neck_rigidity","data_type":"BOOL"},{"column_name":"sym_headache","data_type":"BOOL"},{"column_name":"sym_chills","data_type":"BOOL"},{"column_name":"sym_malaise","data_type":"BOOL"},{"column_name":"sym_discharge_eyes","data_type":"STRING"},{"column_name":"sym_arthralgia","data_type":"BOOL"},{"column_name":"sym_abdominal_pain","data_type":"BOOL"},{"column_name":"sym_redness_eyes","data_type":"BOOL"},{"column_name":"sym_retro_orb_pain","data_type":"BOOL"},{"column_name":"sym_other_symptom","data_type":"BOOL"},{"column_name":"symptom_other","data_type":"STRING"},{"column_name":"vit_pulse","data_type":"INT64"},{"column_name":"vit_bp_sys","data_type":"INT64"},{"column_name":"vit_bp_dia","data_type":"INT64"},{"column_name":"vit_temp","data_type":"INT64"},{"column_name":"vit_resp_rate","data_type":"INT64"},{"column_name":"vit_spo2","data_type":"INT64"},{"column_name":"vit_dehyd","data_type":"INT64"},{"column_name":"vit_icterus","data_type":"INT64"},{"column_name":"vit_edema","data_type":"INT64"},{"column_name":"vit_conj","data_type":"INT64"},{"column_name":"vit_conj_sub","data_type":"INT64"},{"column_name":"vit_eschar","data_type":"INT64"},{"column_name":"vit_eschar_value","data_type":"INT64"},{"column_name":"vit_cbc_done","data_type":"INT64"},{"column_name":"vit_cbc_hemat","data_type":"FLOAT64"},{"column_name":"vit_cbc_hb","data_type":"FLOAT64"},{"column_name":"vit_cbc_rbc","data_type":"FLOAT64"},{"column_name":"vit_cbc_wbc","data_type":"FLOAT64"},{"column_name":"vit_cbc_dc_n","data_type":"FLOAT64"},{"column_name":"vit_cbc_dc_l","data_type":"FLOAT64"},{"column_name":"vit_cbc_dc_m","data_type":"FLOAT64"},{"column_name":"vit_cbc_dc_e","data_type":"FLOAT64"},{"column_name":"vit_cbc_dc_b","data_type":"FLOAT64"},{"column_name":"vit_cbc_esr","data_type":"FLOAT64"},{"column_name":"vit_cbc_plat","data_type":"INT64"},{"column_name":"vit_lf_done","data_type":"INT64"},{"column_name":"vit_lf_al","data_type":"FLOAT64"},{"column_name":"vit_lf_pro","data_type":"FLOAT64"},{"column_name":"vit_lf_ast","data_type":"FLOAT64"},{"column_name":"vit_lf_alt","data_type":"FLOAT64"},{"column_name":"vit_lf_ggt","data_type":"INT64"},{"column_name":"vit_lf_bil_d","data_type":"FLOAT64"},{"column_name":"vit_lf_bil_i","data_type":"FLOAT64"},{"column_name":"vit_lf_bil_t","data_type":"FLOAT64"},{"column_name":"vit_rf_done","data_type":"INT64"},{"column_name":"vit_rf_urea","data_type":"FLOAT64"},{"column_name":"vit_rf_creat","data_type":"FLOAT64"},{"column_name":"vit_rf_chl","data_type":"FLOAT64"},{"column_name":"vit_rf_sod","data_type":"FLOAT64"},{"column_name":"vit_rf_pot","data_type":"FLOAT64"},{"column_name":"vit_rf_uric","data_type":"FLOAT64"},{"column_name":"vit_rf_cal","data_type":"FLOAT64"},{"column_name":"vit_rf_urea_r","data_type":"INT64"},{"column_name":"vit_apr_done","data_type":"INT64"},{"column_name":"vit_apr_crp","data_type":"FLOAT64"},{"column_name":"vit_apr_ldh","data_type":"FLOAT64"},{"column_name":"vit_apr_ddimer","data_type":"FLOAT64"},{"column_name":"vit_apr_ferr","data_type":"FLOAT64"},{"column_name":"vit_apr_tferr","data_type":"FLOAT64"},{"column_name":"vit_apr_proca","data_type":"FLOAT64"},{"column_name":"vit_diag","data_type":"STRING"},{"column_name":"vit_comorbid","data_type":"INT64"},{"column_name":"vit_comorbid_others","data_type":"STRING"},{"column_name":"vit_icu_shift","data_type":"INT64"},{"column_name":"vit_icu_duration","data_type":"INT64"},{"column_name":"vit_outcome","data_type":"INT64"},{"column_name":"vit_death_cause","data_type":"STRING"},{"column_name":"vit_discharge_date","data_type":"STRING"}];
+                
+                let selectedFile = null;
+
+                function handleFileSelect(event) {
+                    selectedFile = event.target.files[0];
+                    if (selectedFile) {
+                        document.getElementById('fileName').textContent = selectedFile.name;
+                        document.getElementById('fileSize').textContent = (selectedFile.size / 1024).toFixed(2) + ' KB';
+                        document.getElementById('fileInfo').classList.remove('hidden');
+                        document.getElementById('uploadBtn').disabled = false;
+                    }
+                }
+
+                async function uploadCSV() {
+                    if (!selectedFile) return;
+                    
+                    const uploadBtn = document.getElementById('uploadBtn');
+                    const uploadStatus = document.getElementById('uploadStatus');
+                    
+                    uploadBtn.disabled = true;
+                    uploadStatus.textContent = 'Validating CSV...';
+                    uploadStatus.className = 'mt-2 text-xs text-primary';
+                    uploadStatus.classList.remove('hidden');
+                    
+                    const reader = new FileReader();
+                    reader.onload = async function(e) {
+                        try {
+                            const csvData = Papa.parse(e.target.result, { header: true, skipEmptyLines: true });
+                            const headers = csvData.meta.fields;
+                            const rows = csvData.data;
+                            const requiredColumns = referenceSchema.map(col => col.column_name);
+                            
+                            let errors = [];
+                            
+                            // Validate columns
+                            headers.forEach(header => {
+                                if (!requiredColumns.includes(header)) {
+                                    errors.push(`Unknown column: ${header}`);
+                                }
+                            });
+                            
+                            requiredColumns.forEach(required => {
+                                if (!headers.includes(required)) {
+                                    errors.push(`Missing column: ${required}`);
+                                }
+                            });
+                            
+                            if (errors.length) {
+                                uploadStatus.innerHTML = `<strong>Validation Errors:</strong><br>${errors.join('<br>')}`;
+                                uploadStatus.className = 'mt-2 text-xs text-danger';
+                                uploadBtn.disabled = false;
+                                return;
+                            }
+                            
+                            // Process rows
+                            const processedRows = rows.map(row => {
+                                row.latitude = '';
+                                row.longitude = '';
+                                
+                                const addressParts = [
+                                    row.pat_house || '',
+                                    row.pat_street || '',
+                                    row.villagename || '',
+                                    row.subdistrictname || '',
+                                    row.districtname || '',
+                                    row.statename || '',
+                                    row.pat_pincode || ''
+                                ].filter(part => part.trim()).join(' | ');
+                                
+                                row.complete_address_column = addressParts;
+                                row.unique_id = `${row.patient_id || ''}_${row.site_code || ''}_${row.patient_entry_date || ''}`;
+                                
+                                return row;
+                            });
+                            
+                            // Deduplication
+                            const seenIds = new Set();
+                            const deduplicatedRows = processedRows.filter(row => {
+                                if (seenIds.has(row.unique_id)) {
+                                    return false;
+                                }
+                                seenIds.add(row.unique_id);
+                                return true;
+                            });
+                            
+                            const duplicateCount = processedRows.length - deduplicatedRows.length;
+                            
+                            uploadStatus.textContent = `Validated! Uploading ${deduplicatedRows.length} rows (${duplicateCount} duplicates removed)...`;
+                            
+                            // Upload
+                            const modifiedCSV = Papa.unparse(deduplicatedRows);
+                            const formData = new FormData();
+                            formData.append('file', new File([modifiedCSV], `validated_${selectedFile.name}`, { type: 'text/csv' }));
+                            
+                            const response = await fetch(`${API_ENDPOINT}/upload`, {
+                                method: 'POST',
+                                body: formData
+                            });
+                            
+                            const result = await response.json();
+                            
+                            if (response.ok) {
+                                uploadStatus.innerHTML = `<strong>✓ Upload successful!</strong><br>File: ${result.fileName}<br>Rows: ${deduplicatedRows.length} (${duplicateCount} duplicates removed)`;
+                                uploadStatus.className = 'mt-2 text-xs text-success';
+                                
+                                // Reset form
+                                setTimeout(() => {
+                                    selectedFile = null;
+                                    document.getElementById('csvFileInput').value = '';
+                                    document.getElementById('fileInfo').classList.add('hidden');
+                                    uploadBtn.disabled = true;
+                                    uploadStatus.classList.add('hidden');
+                                }, 5000);
+                            } else {
+                                throw new Error(result.error || 'Upload failed');
+                            }
+                        } catch (error) {
+                            uploadStatus.textContent = 'Error: ' + error.message;
+                            uploadStatus.className = 'mt-2 text-xs text-danger';
+                            uploadBtn.disabled = false;
+                        }
+                    };
+                    
+                    reader.readAsText(selectedFile);
+                }
+            </script>
 
 
 
 
 
+            <!-- Export Reports Section -->
+            <div class="section hidden flex-col h-full" id="reports">
+                <div class="flex items-center justify-center h-full">
+                    <div class="text-center">
+                        <h1 class="text-2xl font-bold text-gray-800 mb-2">Export Reports</h1>
+                        <p class="text-sm text-gray-500">Coming soon...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Section -->
+            <div class="section hidden flex-col h-full" id="settings">
+                <div class="flex items-center justify-center h-full">
+                    <div class="text-center">
+                        <h1 class="text-2xl font-bold text-gray-800 mb-2">Settings</h1>
+                        <p class="text-sm text-gray-500">Coming soon...</p>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
     <!-- Modals -->
-
-
-
-
     
-    <!-- 3. Clustering Readiness Modal -->
-    <div id="clusteringModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden flex items-center justify-center z-50">
-        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-2xl transform transition-all max-h-[80vh] overflow-y-auto">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-xl font-bold text-gray-800">Clustering Readiness Check</h3>
-                <button onclick="closeModal('clusteringModal')" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
-            </div>
-            <div id="clusteringModalContent">
-                <!-- Content will be populated by JavaScript -->
-            </div>
-        </div>
-    </div>
-    
-    <!-- 4. Confirmation Modal (Replaces confirm()) -->
+    <!-- Confirmation Modal (Replaces confirm()) -->
     <div id="confirmationModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden flex items-center justify-center z-50">
         <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm transform transition-all">
             <h3 id="confirmationTitle" class="text-xl font-bold text-danger mb-3">Confirm Action</h3>

@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentinel-5 | Clusters View</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .custom-scroll::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 3px;
+        }
+        .custom-scroll::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        .compact-table {
+            font-size: 0.75rem;
+        }
+        .compact-table th {
+            position: sticky;
+            top: 0;
+            background: #f8fafc;
+            z-index: 10;
+            padding: 0.25rem 0.375rem;
+        }
+        .compact-table tbody tr:hover {
+            background-color: #f0f9ff;
+        }
+        .compact-table td {
+            padding: 0.25rem 0.375rem;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: '#3b82f6',
+                        success: '#10b981',
+                        warning: '#f59e0b',
+                        danger: '#ef4444',
+                        background: '#f8fafc',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background font-sans antialiased text-gray-800 h-screen overflow-hidden">
+
+    <script>
+        const API_ENDPOINT = 'https://sentinel-dashboard-api-196547645490.asia-south1.run.app';
+        
+        let allClusters = [];
+        let filteredClusters = [];
+        let currentPage = 1;
+        let rowsPerPage = 25;
+        let isLoading = false;
+
+        window.onload = function() {
+            console.log('Clusters View loaded');
+            loadClusters();
+        };
+
+        // --- Data Loading ---
+        async function loadClusters() {
+            if (isLoading) return;
+            isLoading = true;
+            
+            try {
+                showNotification('Loading clusters...', 'primary');
+                
+                // Fetch from BigQuery via Dashboard API
+                const response = await fetch(`${API_ENDPOINT}/api/clusters`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    allClusters = data.data || [];
+                    applyFilters();
+                    showNotification(`Loaded ${allClusters.length} clusters`, 'success');
+                } else {
+                    throw new Error(data.error || 'Failed to load clusters');
+                }
+            } catch (error) {
+                console.error('Error loading clusters:', error);
+                showNotification('Error loading clusters: ' + error.message, 'danger');
+                allClusters = [];
+                applyFilters();
+            } finally {
+                isLoading = false;
+            }
+        }
+
+        // --- Filtering & Search ---
+        window.filterTable = function() {
+            applyFilters();
+        }
+
+        window.applyFilters = function() {
+            const searchTerm = document.getElementById('searchInput')?.value.toLowerCase() || '';
+            const filterAlgo = document.getElementById('filterAlgo')?.value || '';
+            const filterStatus = document.getElementById('filterStatus')?.value || '';
+            const filterMinCases = parseInt(document.getElementById('filterMinCases')?.value) || 0;
+
+            filteredClusters = allClusters.filter(cluster => {
+                const matchesSearch = !searchTerm || 
+                    (cluster.cluster_id || '').toLowerCase().includes(searchTerm) ||
+                    (cluster.location || '').toLowerCase().includes(searchTerm) ||
+                    (cluster.accept_status || '').toLowerCase().includes(searchTerm);
+                
+                const matchesAlgo = !filterAlgo || (cluster.cluster_id || '').startsWith(filterAlgo);
+                const matchesStatus = !filterStatus || (cluster.accept_status || '').toLowerCase() === filterStatus.toLowerCase();
+                const matchesCases = (cluster.case_count || 0) >= filterMinCases;
+
+                return matchesSearch && matchesAlgo && matchesStatus && matchesCases;
+            });
+
+            currentPage = 1;
+            updateTable();
+        }
+
+        window.clearFilters = function() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('filterAlgo').value = '';
+            document.getElementById('filterStatus').value = '';
+            document.getElementById('filterMinCases').value = '';
+            applyFilters();
+        }
+
+        window.toggleAdvancedFilter = function() {
+            const panel = document.getElementById('advancedFilterPanel');
+            panel.classList.toggle('hidden');
+        }
+
+        // --- Pagination ---
+        window.changeRowsPerPage = function() {
+            rowsPerPage = parseInt(document.getElementById('rowsPerPage').value);
+            currentPage = 1;
+            updateTable();
+        }
+
+        window.firstPage = function() {
+            currentPage = 1;
+            updateTable();
+        }
+
+        window.prevPage = function() {
+            if (currentPage > 1) {
+                currentPage--;
+                updateTable();
+            }
+        }
+
+        window.nextPage = function() {
+            const totalPages = Math.ceil(filteredClusters.length / rowsPerPage);
+            if (currentPage < totalPages) {
+                currentPage++;
+                updateTable();
+            }
+        }
+
+        window.lastPage = function() {
+            currentPage = Math.ceil(filteredClusters.length / rowsPerPage);
+            updateTable();
+        }
+
+        // --- Data Operations ---
+        window.updateClusterStatus = async function(clusterId, currentStatus) {
+            const statusMap = { 
+                'pending': 'accepted', 
+                'accepted': 'rejected', 
+                'rejected': 'pending' 
+            };
+            const newStatus = statusMap[currentStatus.toLowerCase()] || 'pending';
+            
+            try {
+                const response = await fetch(`${API_ENDPOINT}/api/clusters/update`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        cluster_id: clusterId, 
+                        accept_status: newStatus 
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    const cluster = allClusters.find(c => c.cluster_id === clusterId);
+                    if (cluster) {
+                        cluster.accept_status = newStatus;
+                        applyFilters();
+                        showNotification(`Status updated to ${newStatus}`, 'success');
+                    }
+                } else {
+                    throw new Error(data.error || 'Update failed');
+                }
+            } catch (error) {
+                console.error('Error updating status:', error);
+                showNotification('Error updating status: ' + error.message, 'danger');
+            }
+        }
+
+        window.refreshData = function() {
+            loadClusters();
+        }
+
+        // --- UI Rendering ---
+        function updateTable() {
+            const tbody = document.getElementById('tableBody');
+            
+            if (filteredClusters.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-gray-400">No clusters found.</td></tr>`;
+                document.getElementById('recordCount').textContent = '0 clusters';
+                document.getElementById('pageInfo').textContent = '0-0 of 0';
+                updatePaginationButtons();
+                return;
+            }
+
+            // Sort by creation time (newest first)
+            filteredClusters.sort((a, b) => {
+                const dateA = new Date(a.created_at || 0);
+                const dateB = new Date(b.created_at || 0);
+                return dateB - dateA;
+            });
+
+            // Pagination
+            const startIndex = (currentPage - 1) * rowsPerPage;
+            const endIndex = Math.min(startIndex + rowsPerPage, filteredClusters.length);
+            const paginatedClusters = filteredClusters.slice(startIndex, endIndex);
+
+            tbody.innerHTML = paginatedClusters.map(cluster => {
+                const algoType = (cluster.cluster_id || '').startsWith('ABC') ? 'ABC' : 
+                                (cluster.cluster_id || '').startsWith('GIS') ? 'GIS' : 'N/A';
+                const statusColors = {
+                    'pending': 'bg-warning/20 text-warning',
+                    'accepted': 'bg-success/20 text-success',
+                    'rejected': 'bg-danger/20 text-danger'
+                };
+                const statusColor = statusColors[(cluster.accept_status || '').toLowerCase()] || 'bg-gray-200 text-gray-600';
+                
+                return `
+                    <tr class="border-b border-gray-100">
+                        <td class="px-2 py-1.5 font-mono text-xs text-gray-700">${cluster.cluster_id || 'N/A'}</td>
+                        <td class="px-2 py-1.5 text-xs text-gray-700">${algoType}</td>
+                        <td class="px-2 py-1.5 text-xs text-gray-700 text-center font-semibold">${cluster.case_count || 0}</td>
+                        <td class="px-2 py-1.5 text-xs text-gray-600">${cluster.location || 'N/A'}</td>
+                        <td class="px-2 py-1.5 text-xs text-gray-600">${cluster.date_range || 'N/A'}</td>
+                        <td class="px-2 py-1.5 text-center">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColor} cursor-pointer" 
+                                onclick="updateClusterStatus('${cluster.cluster_id}', '${cluster.accept_status || 'pending'}')" 
+                                title="Click to cycle status">
+                                ${cluster.accept_status || 'Pending'}
+                            </span>
+                        </td>
+                        <td class="px-2 py-1.5 text-xs text-gray-500">${cluster.created_at ? new Date(cluster.created_at).toLocaleString() : 'N/A'}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            document.getElementById('recordCount').textContent = `${filteredClusters.length} cluster${filteredClusters.length !== 1 ? 's' : ''}`;
+            document.getElementById('pageInfo').textContent = `${startIndex + 1}-${endIndex} of ${filteredClusters.length}`;
+            updatePaginationButtons();
+        }
+
+        function updatePaginationButtons() {
+            const totalPages = Math.ceil(filteredClusters.length / rowsPerPage);
+            document.getElementById('firstBtn').disabled = currentPage === 1;
+            document.getElementById('prevBtn').disabled = currentPage === 1;
+            document.getElementById('nextBtn').disabled = currentPage >= totalPages;
+            document.getElementById('lastBtn').disabled = currentPage >= totalPages;
+        }
+
+        // --- Utility Functions ---
+        window.goBack = function() {
+            window.location.href = 'index.html';
+        }
+
+        window.showNotification = function(message, type = 'primary') {
+            const container = document.getElementById('notificationContainer');
+            const colorMap = {
+                primary: 'bg-primary border-primary',
+                success: 'bg-success border-success',
+                warning: 'bg-warning border-warning',
+                danger: 'bg-danger border-danger'
+            };
+
+            const notif = document.createElement('div');
+            notif.className = `p-4 mb-2 rounded-lg text-white shadow-lg border-l-4 ${colorMap[type]}`;
+            notif.textContent = message;
+
+            container.appendChild(notif);
+
+            setTimeout(() => {
+                notif.classList.add('opacity-0', 'transition-opacity', 'duration-500');
+                notif.addEventListener('transitionend', () => container.removeChild(notif));
+            }, 3000);
+        }
+    </script>
+
+    <div id="notificationContainer" class="fixed bottom-4 right-4 z-50 max-w-sm">
+        <!-- Notifications will appear here -->
+    </div>
+
+    <!-- Main Container -->
+    <div class="flex flex-col h-screen">
+        
+        <!-- Header Bar -->
+        <div class="bg-white shadow-sm border-b border-gray-200 px-2 py-1 flex items-center justify-between">
+            <div class="flex items-center space-x-1.5">
+                <button onclick="goBack()" class="flex items-center space-x-0.5 text-gray-600 hover:text-primary transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                    </svg>
+                    <span class="text-xs font-medium">Back</span>
+                </button>
+                <div class="h-4 w-px bg-gray-300"></div>
+                <h1 class="text-sm font-bold text-gray-800">Sentinel-5</h1>
+                <span class="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">Clusters</span>
+            </div>
+            <div class="flex items-center space-x-1.5 flex-1 max-w-2xl mx-2">
+                <div class="relative flex-1">
+                    <input type="text" id="searchInput" placeholder="Search..." 
+                        class="w-full pl-7 pr-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-primary focus:border-primary transition text-xs"
+                        onkeyup="filterTable()">
+                    <svg class="w-3.5 h-3.5 absolute left-2 top-1.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                </div>
+                <button onclick="toggleAdvancedFilter()" class="flex items-center space-x-0.5 bg-primary hover:bg-blue-600 text-white px-2 py-1 rounded transition-colors text-xs whitespace-nowrap">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+                    </svg>
+                    <span>Filter</span>
+                </button>
+                <button onclick="refreshData()" class="flex items-center space-x-0.5 bg-success hover:bg-green-600 text-white px-2 py-1 rounded transition-colors text-xs whitespace-nowrap">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                    <span>Refresh</span>
+                </button>
+            </div>
+            <div class="flex items-center">
+                <span id="recordCount" class="text-xs text-gray-600 bg-primary/10 px-2 py-0.5 rounded font-medium">0 clusters</span>
+            </div>
+        </div>
+
+        <!-- Advanced Filter Panel -->
+        <div id="advancedFilterPanel" class="hidden bg-gray-50 border-b border-gray-200 px-3 py-2">
+            <div class="grid grid-cols-4 gap-2">
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-0.5">Algorithm</label>
+                    <select id="filterAlgo" class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-primary focus:border-primary transition" onchange="applyFilters()">
+                        <option value="">All</option>
+                        <option value="ABC">ABC (Rural)</option>
+                        <option value="GIS">GIS (Urban)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-0.5">Status</label>
+                    <select id="filterStatus" class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-primary focus:border-primary transition" onchange="applyFilters()">
+                        <option value="">All</option>
+                        <option value="pending">Pending</option>
+                        <option value="accepted">Accepted</option>
+                        <option value="rejected">Rejected</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-0.5">Cases (Min)</label>
+                    <input type="number" id="filterMinCases" placeholder="0" class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-primary focus:border-primary transition" onchange="applyFilters()">
+                </div>
+                <div class="flex items-end">
+                    <button onclick="clearFilters()" class="w-full px-2 py-1 text-xs text-gray-600 hover:text-primary hover:bg-gray-100 border border-gray-300 rounded transition-colors">Clear</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Table Container -->
+        <div class="flex-1 overflow-hidden p-1.5">
+            <div class="bg-white rounded-lg shadow h-full flex flex-col overflow-hidden">
+                <div class="flex-1 overflow-auto custom-scroll">
+                    <table class="w-full compact-table text-left">
+                        <thead>
+                            <tr class="border-b border-gray-200">
+                                <th class="text-xs font-semibold text-gray-600">Cluster ID</th>
+                                <th class="text-xs font-semibold text-gray-600">Algo</th>
+                                <th class="text-xs font-semibold text-gray-600 text-center">Cases</th>
+                                <th class="text-xs font-semibold text-gray-600">Location</th>
+                                <th class="text-xs font-semibold text-gray-600">Date Range</th>
+                                <th class="text-xs font-semibold text-gray-600 text-center">Status</th>
+                                <th class="text-xs font-semibold text-gray-600">Created</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                            <tr><td colspan="7" class="text-center py-6 text-gray-400 text-xs">Loading clusters...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Pagination -->
+                <div class="border-t border-gray-200 px-3 py-1.5 flex items-center justify-between bg-gray-50">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs text-gray-600">Rows:</span>
+                        <select id="rowsPerPage" class="px-1.5 py-0.5 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-primary focus:border-primary" onchange="changeRowsPerPage()">
+                            <option value="10">10</option>
+                            <option value="25" selected>25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <span id="pageInfo" class="text-xs text-gray-600">1-25 of 100</span>
+                        <div class="flex items-center space-x-0.5">
+                            <button onclick="firstPage()" class="px-1.5 py-0.5 border border-gray-300 rounded hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" id="firstBtn">
+                                <svg class="w-3.5 h-3.5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>
+                                </svg>
+                            </button>
+                            <button onclick="prevPage()" class="px-1.5 py-0.5 border border-gray-300 rounded hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" id="prevBtn">
+                                <svg class="w-3.5 h-3.5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                                </svg>
+                            </button>
+                            <button onclick="nextPage()" class="px-1.5 py-0.5 border border-gray-300 rounded hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" id="nextBtn">
+                                <svg class="w-3.5 h-3.5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                                </svg>
+                            </button>
+                            <button onclick="lastPage()" class="px-1.5 py-0.5 border border-gray-300 rounded hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" id="lastBtn">
+                                <svg class="w-3.5 h-3.5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+</html>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Cluster Engine - Data Management System</title>
+    <title>Sentinel-5 | Cluster Engine</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -23,442 +23,42 @@
             }
         }
     </script>
+</head>
+<body class="bg-background font-sans antialiased text-gray-800 h-screen overflow-hidden">
+
     <script>
-        const SMART_ENGINE_URL = 'https://smart-cluster-engine-196547645490.asia-south1.run.app';
-
-        async function initializeTables() {
-            const btn = document.getElementById('initBtn');
-            const results = document.getElementById('initResults');
-            
-            btn.innerHTML = '<svg class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg><span>Initializing...</span>';
-            btn.disabled = true;
-            
-            try {
-                const response = await fetch(`${SMART_ENGINE_URL}/smart-init`, {
-                    method: 'POST'
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    results.innerHTML = `
-                        <div class="bg-green-50 p-2 rounded border border-green-200">
-                            <div class="text-green-700 font-medium mb-1">✅ Tables Initialized</div>
-                            <div class="text-green-600 text-xs">${data.message}</div>
-                        </div>
-                    `;
-                } else {
-                    results.innerHTML = `<div class="bg-red-50 p-2 rounded border border-red-200 text-red-700 text-xs">❌ ${data.error}</div>`;
-                }
-                results.classList.remove('hidden');
-            } catch (error) {
-                results.innerHTML = `<div class="bg-red-50 p-2 rounded border border-red-200 text-red-700 text-xs">❌ Error: ${error.message}</div>`;
-                results.classList.remove('hidden');
-            } finally {
-                btn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path></svg><span>Initialize Tables</span>';
-                btn.disabled = false;
-            }
-        }
-
-        async function runPreflight() {
-            const btn = document.getElementById('preflightBtn');
-            const results = document.getElementById('preflightResults');
-            
-            btn.innerHTML = '<svg class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg><span>Checking...</span>';
-            btn.disabled = true;
-            
-            try {
-                const response = await fetch(`${SMART_ENGINE_URL}/smart-preflight`);
-                const data = await response.json();
-                
-                if (data.success) {
-                    const pendingClusters = data.pending_clusters || 0;
-                    const hasPending = pendingClusters > 0;
-                    const overallPassed = data.overall_passed;
-                    
-                    const statusIcon = overallPassed ? '✅' : '❌';
-                    const statusColor = overallPassed ? 'text-green-600' : 'text-red-600';
-                    
-                    results.innerHTML = `
-                        <div class="bg-gray-50 p-2 rounded border">
-                            <div class="flex items-center justify-between mb-2">
-                                <span class="font-medium text-gray-700">Preflight Check</span>
-                                <span class="${statusColor}">${statusIcon}</span>
-                            </div>
-                            <div class="text-xs space-y-1">
-                                <div class="flex justify-between">
-                                    <span>Test Date:</span>
-                                    <span class="font-medium">${data.test_date || 'N/A'}</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span>Data Quality:</span>
-                                    <span class="font-medium ${data.data_quality_passed ? 'text-green-600' : 'text-red-600'}">${data.data_quality_passed ? 'PASSED' : 'FAILED'}</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span>Pending Clusters:</span>
-                                    <span class="font-medium ${hasPending ? 'text-red-600' : 'text-green-600'}">${pendingClusters}</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span>Overall Status:</span>
-                                    <span class="font-medium ${statusColor}">${overallPassed ? 'PASSED' : 'FAILED'}</span>
-                                </div>
-                            </div>
-                            ${hasPending ? '<div class="mt-2 p-1 bg-red-50 text-red-600 rounded text-xs">⚠️ Cannot proceed with pending clusters<br><button onclick="window.location.href=\'cluster-linelist.html?loadPending=true\'" class="mt-1 px-2 py-1 bg-orange-500 text-white rounded text-xs hover:bg-orange-600">View Pending Clusters</button></div>' : ''}
-                            ${!data.data_quality_passed ? '<div class="mt-2 p-1 bg-red-50 text-red-600 rounded text-xs">⚠️ Data quality below threshold</div>' : ''}
-                        </div>
-                    `;
-                    
-                    // Show test button only if overall passed
-                    if (overallPassed) {
-                        btn.disabled = true;
-                        btn.classList.add('opacity-50');
-                        document.getElementById('testBtn').classList.remove('hidden');
-                        window.currentProcessDate = data.test_date;
-                    }
-                } else {
-                    results.innerHTML = `<div class="bg-red-50 p-2 rounded border border-red-200 text-red-700 text-xs">❌ ${data.error}</div>`;
-                }
-                results.classList.remove('hidden');
-            } catch (error) {
-                results.innerHTML = `<div class="bg-red-50 p-2 rounded border border-red-200 text-red-700 text-xs">❌ Error: ${error.message}</div>`;
-                results.classList.remove('hidden');
-            }
-            
-            if (!btn.disabled) {
-                btn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg><span>Run Preflight</span>';
-            }
-        }
-
-        async function testClustering() {
-            const btn = document.getElementById('testBtn');
-            const results = document.getElementById('testResults');
-            
-            btn.innerHTML = '<svg class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg><span>Testing...</span>';
-            btn.disabled = true;
-            
-            try {
-                const response = await fetch(`${SMART_ENGINE_URL}/smart-test`, {
-                    method: 'POST'
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    results.innerHTML = `
-                        <div class="bg-blue-50 p-2 rounded border border-blue-200">
-                            <div class="text-blue-700 font-medium mb-1">🧪 Test Complete</div>
-                            <div class="text-blue-600 text-xs space-y-0.5">
-                                <div>Test Date: ${data.test_date}</div>
-                                <div>Data Quality: ${data.data_quality_passed ? '✅ Passed' : '❌ Failed'}</div>
-                                <div>Status: ${data.message}</div>
-                            </div>
-                        </div>
-                    `;
-                    
-                    // Show process button and freeze test if passed
-                    if (data.data_quality_passed) {
-                        btn.disabled = true;
-                        btn.classList.add('opacity-50');
-                        document.getElementById('processBtnText').textContent = `Process ${window.currentProcessDate || 'Date'}`;
-                        document.getElementById('singleBtn').classList.remove('hidden');
-                    }
-                } else {
-                    results.innerHTML = `<div class="bg-red-50 p-2 rounded border border-red-200 text-red-700 text-xs">❌ ${data.error}</div>`;
-                }
-                results.classList.remove('hidden');
-            } catch (error) {
-                results.innerHTML = `<div class="bg-red-50 p-2 rounded border border-red-200 text-red-700 text-xs">❌ Error: ${error.message}</div>`;
-                results.classList.remove('hidden');
-            }
-            
-            if (!btn.disabled) {
-                btn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 7.172V5L8 4z"></path></svg><span>Test Clustering</span>';
-            }
-        }
-
-        async function processSingleDate() {
-            const btn = document.getElementById('singleBtn');
-            const results = document.getElementById('processingResults');
-            
-            btn.innerHTML = '<svg class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg><span>Processing...</span>';
-            btn.disabled = true;
-            
-            try {
-                const response = await fetch(`${SMART_ENGINE_URL}/smart-cluster`, {
-                    method: 'POST'
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    results.innerHTML = `
-                        <div class="bg-green-50 p-2 rounded border border-green-200">
-                            <div class="text-green-700 font-medium mb-1">✅ Processing Complete</div>
-                            <div class="text-green-600 text-xs space-y-0.5">
-                                <div>Date: ${data.date_processed}</div>
-                                <div>ABC Clusters: ${data.abc_clusters} (Expansions: ${data.abc_expansions})</div>
-                                <div>GIS Clusters: ${data.gis_clusters} (Expansions: ${data.gis_expansions})</div>
-                                <div>Worker: ${data.worker_id}</div>
-                            </div>
-                        </div>
-                    `;
-                    
-                    // Freeze process button and show next button
-                    btn.disabled = true;
-                    btn.classList.add('opacity-50');
-                    document.getElementById('nextBtn').classList.remove('hidden');
-                } else {
-                    results.innerHTML = `<div class="bg-red-50 p-2 rounded border border-red-200 text-red-700 text-xs">❌ ${data.error}</div>`;
-                }
-                results.classList.remove('hidden');
-            } catch (error) {
-                results.innerHTML = `<div class="bg-red-50 p-2 rounded border border-red-200 text-red-700 text-xs">❌ Error: ${error.message}</div>`;
-                results.classList.remove('hidden');
-            }
-        }
-        
-        function resetWorkflow() {
-            // Reset all buttons and results
-            document.getElementById('preflightBtn').disabled = false;
-            document.getElementById('preflightBtn').classList.remove('opacity-50');
-            document.getElementById('testBtn').classList.add('hidden');
-            document.getElementById('testBtn').disabled = false;
-            document.getElementById('testBtn').classList.remove('opacity-50');
-            document.getElementById('singleBtn').classList.add('hidden');
-            document.getElementById('singleBtn').disabled = false;
-            document.getElementById('singleBtn').classList.remove('opacity-50');
-            document.getElementById('nextBtn').classList.add('hidden');
-            
-            // Clear all results
-            document.getElementById('preflightResults').classList.add('hidden');
-            document.getElementById('testResults').classList.add('hidden');
-            document.getElementById('processingResults').classList.add('hidden');
-            
-            // Reset button text
-            document.getElementById('processBtnText').textContent = 'Process Single Date';
-            
-            // Reset preflight button text
-            document.getElementById('preflightBtn').innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg><span>Run Preflight</span>';
-        }
-
-        async function processBatch() {
-            const btn = document.getElementById('batchBtn');
-            const results = document.getElementById('processingResults');
-            const maxDates = document.getElementById('maxDates').value || 5;
-            
-            btn.innerHTML = '<svg class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg><span>Processing...</span>';
-            btn.disabled = true;
-            
-            try {
-                const response = await fetch(`${SMART_ENGINE_URL}/smart-batch`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ max_dates: parseInt(maxDates) })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    results.innerHTML = `
-                        <div class="bg-green-50 p-2 rounded border border-green-200">
-                            <div class="text-green-700 font-medium mb-1">✅ Batch Complete</div>
-                            <div class="text-green-600 text-xs space-y-0.5">
-                                <div>Dates Processed: ${data.dates_processed}</div>
-                                <div>Total Results: ${data.results ? data.results.length : 0}</div>
-                            </div>
-                        </div>
-                    `;
-                } else {
-                    results.innerHTML = `<div class="bg-red-50 p-2 rounded border border-red-200 text-red-700 text-xs">❌ ${data.error}</div>`;
-                }
-                results.classList.remove('hidden');
-            } catch (error) {
-                results.innerHTML = `<div class="bg-red-50 p-2 rounded border border-red-200 text-red-700 text-xs">❌ Error: ${error.message}</div>`;
-                results.classList.remove('hidden');
-            } finally {
-                btn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg><span>Process Batch</span>';
-                btn.disabled = false;
-            }
-        }
-
-        async function checkStatus() {
-            const btn = document.getElementById('statusBtn');
-            const results = document.getElementById('statusResults');
-            
-            btn.innerHTML = '<svg class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg><span>Checking...</span>';
-            btn.disabled = true;
-            
-            try {
-                const response = await fetch(`${SMART_ENGINE_URL}/smart-status`);
-                const data = await response.json();
-                
-                results.innerHTML = `
-                    <div class="bg-blue-50 p-2 rounded border border-blue-200">
-                        <div class="text-blue-700 font-medium mb-1">📊 System Status</div>
-                        <div class="text-blue-600 text-xs space-y-0.5">
-                            <div>Dates Processed: ${data.dates_processed || 0}</div>
-                            <div>Total Clusters: ${data.total_clusters || 0}</div>
-                            <div>ABC Clusters: ${data.abc_clusters || 0}</div>
-                            <div>GIS Accepted: ${data.gis_accepted || 0}</div>
-                            <div>GIS Pending: ${data.gis_pending || 0}</div>
-                            <div>Total Patients: ${data.total_patients || 0}</div>
-                            <div>Last Date: ${data.last_processed_date ? new Date(data.last_processed_date).toLocaleDateString() : 'None'}</div>
-                        </div>
-                        ${data.cluster_limits ? `
-                            <div class="mt-2 pt-2 border-t border-blue-200">
-                                <div class="text-blue-700 font-medium mb-1">Cluster Limits</div>
-                                <div class="text-blue-600 text-xs space-y-0.5">
-                                    <div>Max Age: ${data.cluster_limits.max_cluster_age_days} days</div>
-                                    <div>Merge Distance: ${data.cluster_limits.dbscan_epsilon_m}m</div>
-                                    <div>Max Radius: ${data.cluster_limits.max_cluster_radius_m}m</div>
-                                    <div>Min Size: ${data.cluster_limits.min_cluster_size}</div>
-                                    <div>Auto Accept: ${data.cluster_limits.auto_accept_radius_m}m</div>
-                                </div>
-                            </div>
-                        ` : ''}
-                    </div>
-                `;
-                results.classList.remove('hidden');
-            } catch (error) {
-                results.innerHTML = `<div class="bg-red-50 p-2 rounded border border-red-200 text-red-700 text-xs">❌ Error: ${error.message}</div>`;
-                results.classList.remove('hidden');
-            } finally {
-                btn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg><span>Check Status</span>';
-                btn.disabled = false;
-            }
-        }
-
-        async function truncateTables() {
-            if (!confirm('⚠️ This will delete ALL clustering data. Are you sure?')) {
-                return;
-            }
-            
-            const btn = document.getElementById('truncateBtn');
-            const results = document.getElementById('statusResults');
-            
-            btn.innerHTML = '<svg class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg><span>Truncating...</span>';
-            btn.disabled = true;
-            
-            try {
-                const response = await fetch(`${SMART_ENGINE_URL}/smart-truncate`, {
-                    method: 'POST'
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    results.innerHTML = `
-                        <div class="bg-orange-50 p-2 rounded border border-orange-200">
-                            <div class="text-orange-700 font-medium mb-1">🗑️ Tables Truncated</div>
-                            <div class="text-orange-600 text-xs space-y-0.5">
-                                <div>Tables Cleared: ${data.truncated_tables.length}</div>
-                                <div>Status: ${data.message}</div>
-                            </div>
-                        </div>
-                    `;
-                } else {
-                    results.innerHTML = `<div class="bg-red-50 p-2 rounded border border-red-200 text-red-700 text-xs">❌ ${data.error}</div>`;
-                }
-                results.classList.remove('hidden');
-            } catch (error) {
-                results.innerHTML = `<div class="bg-red-50 p-2 rounded border border-red-200 text-red-700 text-xs">❌ Error: ${error.message}</div>`;
-                results.classList.remove('hidden');
-            } finally {
-                btn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg><span>Truncate Tables</span>';
-                btn.disabled = false;
-            }
+        window.goBack = function() {
+            window.location.href = 'index.html';
         }
     </script>
-</head>
-<body class="bg-background font-sans antialiased text-gray-800">
-    <div class="min-h-screen p-4">
-        <!-- Header -->
-        <div class="max-w-7xl mx-auto mb-6">
-            <div class="flex items-center space-x-4">
-                <button onclick="window.history.back()" class="flex items-center text-primary hover:text-blue-700 transition-colors">
-                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+
+    <!-- Main Container -->
+    <div class="flex flex-col h-screen">
+        
+        <!-- Header Bar -->
+        <div class="bg-white shadow-sm border-b border-gray-200 px-2 py-1 flex items-center justify-between">
+            <div class="flex items-center space-x-1.5">
+                <button onclick="goBack()" class="flex items-center space-x-0.5 text-gray-600 hover:text-primary transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
                     </svg>
-                    Back
+                    <span class="text-xs font-medium">Back</span>
                 </button>
-                <div class="border-l border-gray-300 pl-4">
-                    <h1 class="text-2xl font-bold text-gray-900">Smart Cluster Engine</h1>
-                    <p class="text-gray-500 text-sm">Time-based clustering with outbreak continuity</p>
-                </div>
+                <div class="h-4 w-px bg-gray-300"></div>
+                <h1 class="text-sm font-bold text-gray-800">Sentinel-5</h1>
+                <span class="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">Cluster Engine</span>
             </div>
         </div>
 
         <!-- Main Content -->
-        <div class="max-w-7xl mx-auto">
-            <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                
-                <!-- Column 1: Setup & Validation -->
-                <div class="bg-white p-2 rounded shadow">
-                    <h3 class="text-sm font-semibold text-gray-800 mb-1">Setup & Validation</h3>
-                    <p class="text-xs text-gray-600 mb-2">Validate data quality before clustering</p>
-                    
-                    <div class="space-y-2">
-                        <button onclick="runPreflight()" id="preflightBtn" class="w-full bg-orange-500 hover:bg-orange-600 text-white text-xs py-1.5 px-2 rounded transition-colors flex items-center justify-center space-x-1">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            <span>Run Preflight</span>
-                        </button>
-                        
-                        <button onclick="testClustering()" id="testBtn" class="w-full bg-purple-500 hover:bg-purple-600 text-white text-xs py-1.5 px-2 rounded transition-colors flex items-center justify-center space-x-1 hidden">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 7.172V5L8 4z"></path>
-                            </svg>
-                            <span>Test Clustering</span>
-                        </button>
-                    </div>
-                    
-                    <div id="preflightResults" class="mt-3 text-xs hidden"></div>
-                    <div id="testResults" class="mt-3 text-xs hidden"></div>
-                </div>
-                
-                <!-- Column 2: Processing -->
-                <div class="bg-white p-2 rounded shadow">
-                    <h3 class="text-sm font-semibold text-gray-800 mb-1">Smart Processing</h3>
-                    <p class="text-xs text-gray-600 mb-2">Execute clustering with time-based merging</p>
-                    
-                    <div class="space-y-2">
-                        <button onclick="processSingleDate()" id="singleBtn" class="w-full bg-green-500 hover:bg-green-600 text-white text-xs py-1.5 px-2 rounded transition-colors flex items-center justify-center space-x-1 hidden">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                            </svg>
-                            <span id="processBtnText">Process Single Date</span>
-                        </button>
-                        
-                        <button onclick="resetWorkflow()" id="nextBtn" class="w-full bg-blue-500 hover:bg-blue-600 text-white text-xs py-1.5 px-2 rounded transition-colors flex items-center justify-center space-x-1 hidden">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                            </svg>
-                            <span>Next Analysis</span>
-                        </button>
-                    </div>
-                    
-                    <div id="processingResults" class="mt-3 text-xs hidden"></div>
-                </div>
-                
-                <!-- Column 3: Monitoring -->
-                <div class="bg-white p-2 rounded shadow">
-                    <h3 class="text-sm font-semibold text-gray-800 mb-1">Monitoring & Management</h3>
-                    <p class="text-xs text-gray-600 mb-2">System status and data management</p>
-                    
-                    <div class="space-y-2">
-                        <button onclick="checkStatus()" id="statusBtn" class="w-full bg-blue-500 hover:bg-blue-600 text-white text-xs py-1.5 px-2 rounded transition-colors flex items-center justify-center space-x-1">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                            </svg>
-                            <span>Check Status</span>
-                        </button>
-                    </div>
-                    
-                    <div id="statusResults" class="mt-3 text-xs hidden"></div>
-                </div>
+        <div class="flex-1 flex items-center justify-center p-4">
+            <div class="text-center">
+                <h1 class="text-2xl font-bold text-gray-800 mb-2">Cluster Engine</h1>
+                <p class="text-sm text-gray-500">Coming soon...</p>
             </div>
         </div>
+
     </div>
+
 </body>
 </html>
