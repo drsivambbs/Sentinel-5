@@ -79,13 +79,92 @@
 <body class="bg-background font-sans antialiased text-gray-800">
 
     <script>
+        const DASHBOARD_API = 'https://dashboard-api-196547645490.asia-south1.run.app';
+
         // Initialize application
         window.onload = function() {
             console.log('Application loaded');
+            loadDashboard();
         };
         
         window.toggleSidebar = function() {
             document.getElementById('sidebar').classList.toggle('collapsed');
+        }
+
+        async function loadDashboard() {
+            try {
+                // Load system overview stats from dashboard API
+                const statsResponse = await fetch(`${DASHBOARD_API}/api/smart-clusters/stats`);
+                const statsData = await statsResponse.json();
+                
+                if (statsData.success) {
+                    const stats = statsData.data;
+                    
+                    // Update dashboard statistics with correct metrics
+                    document.getElementById('dash-total-records').textContent = stats.total_records?.toLocaleString() || '0';
+                    document.getElementById('dash-total-clusters').textContent = stats.total_clusters?.toLocaleString() || '0';
+                    document.getElementById('dash-last-updated').textContent = stats.last_uploaded_date || 'N/A';
+                    document.getElementById('dash-last-analysed').textContent = stats.last_analysed_date || 'N/A';
+                    document.getElementById('dash-pending').textContent = stats.total_pending?.toLocaleString() || '0';
+                    
+                    console.log('Dashboard stats loaded:', stats);
+                } else {
+                    console.error('Failed to load stats:', statsData.error);
+                }
+                
+                // Load geocoding status and health checks
+                await loadSystemHealth();
+                
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+                showNotification('Failed to load dashboard data', 'danger');
+            }
+        }
+
+        async function loadSystemHealth() {
+            // Check geocoding status
+            try {
+                const geocodingResponse = await fetch(`${DASHBOARD_API}/api/geocoding/progress`);
+                const geocodingData = await geocodingResponse.json();
+                
+                if (geocodingData.success) {
+                    const pct = geocodingData.data.completion_pct || 0;
+                    document.getElementById('geocoding-status').innerHTML = `<span class="${pct >= 85 ? 'text-green-600' : 'text-orange-500'}">${pct.toFixed(1)}% Complete</span>`;
+                } else {
+                    document.getElementById('geocoding-status').innerHTML = '<span class="text-red-500">Error</span>';
+                }
+            } catch (error) {
+                document.getElementById('geocoding-status').innerHTML = '<span class="text-red-500">Error</span>';
+            }
+
+            // Health check functions with proper CORS handling
+            const services = [
+                { id: 'upload-health', name: 'Upload Function' },
+                { id: 'bigquery-health', name: 'BigQuery Sync' },
+                { id: 'geocoding-health', name: 'Geocoding Service' },
+                { id: 'dashboard-health', name: 'Dashboard API' }
+            ];
+
+            // Check all services through dashboard API
+            try {
+                const healthResponse = await fetch(`${DASHBOARD_API}/api/health/services`);
+                if (healthResponse.ok) {
+                    const healthData = await healthResponse.json();
+                    services.forEach(service => {
+                        const status = healthData[service.name] || 'unknown';
+                        const isHealthy = status === 'healthy';
+                        document.getElementById(service.id).innerHTML = `<span class="${isHealthy ? 'text-green-600' : 'text-red-500'}">${isHealthy ? '✓ Healthy' : '✗ Down'}</span>`;
+                    });
+                } else {
+                    services.forEach(service => {
+                        document.getElementById(service.id).innerHTML = '<span class="text-red-500">✗ Unknown</span>';
+                    });
+                }
+            } catch (error) {
+                services.forEach(service => {
+                    document.getElementById(service.id).innerHTML = '<span class="text-red-500">✗ Error</span>';
+                });
+            }
         }
 
 
@@ -318,7 +397,7 @@
                     </div>
                     <div class="nav-item p-2 mx-2 my-0.5 rounded cursor-pointer transition-colors hover:bg-gray-100 border-l-2 border-transparent flex items-center" onclick="window.location.href='data-import.html'">
                         <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-                        <span class="nav-text ml-2 text-sm">Data Import</span>
+                        <span class="nav-text ml-2 text-sm">Import & Export</span>
                     </div>
                     <div class="nav-item p-2 mx-2 my-0.5 rounded cursor-pointer transition-colors hover:bg-gray-100 border-l-2 border-transparent flex items-center" onclick="window.location.href='clusters-view.html'">
                         <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
@@ -341,14 +420,112 @@
         </div>
 
         <!-- Main Content Area -->
-        <div class="main-content flex-1 p-2 custom-scroll">
+        <div class="main-content flex-1 overflow-hidden">
             
             <!-- Dashboard Section -->
-            <div class="section flex flex-col h-full" id="dashboard">
-                <div class="flex items-center justify-center h-full">
-                    <div class="text-center">
-                        <h1 class="text-2xl font-bold text-gray-800 mb-2">Sentinel-5 Dashboard</h1>
-                        <p class="text-sm text-gray-500">Select an option from the sidebar to get started</p>
+            <div class="section h-full flex flex-col" id="dashboard">
+                <!-- Compact Header -->
+                <div class="bg-white border-b border-gray-200 px-3 py-2">
+                    <h1 class="text-lg font-bold text-gray-800">Dashboard</h1>
+                </div>
+
+                <!-- 3 Container Layout -->
+                <div class="flex-1 p-2 grid grid-cols-3 gap-2">
+                    <!-- Container 1: System Overview -->
+                    <div class="bg-white rounded-lg shadow border border-gray-200 p-3 overflow-auto custom-scroll">
+                        <h2 class="text-sm font-bold text-gray-800 mb-3 pb-2 border-b flex items-center">
+                            <svg class="w-4 h-4 mr-2 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                            System Overview
+                        </h2>
+                        
+                        <!-- Statistics Table -->
+                        <div class="bg-gradient-to-br from-slate-50 to-gray-50 rounded-lg p-3 mb-3">
+                            <table class="w-full text-xs">
+                                <tbody>
+                                    <tr class="border-b border-gray-200">
+                                        <td class="py-2 text-gray-600 font-medium">Total Records</td>
+                                        <td class="py-2 text-right font-bold text-blue-600" id="dash-total-records">-</td>
+                                    </tr>
+                                    <tr class="border-b border-gray-200">
+                                        <td class="py-2 text-gray-600 font-medium">Total Clusters</td>
+                                        <td class="py-2 text-right font-bold text-green-600" id="dash-total-clusters">-</td>
+                                    </tr>
+                                    <tr class="border-b border-gray-200">
+                                        <td class="py-2 text-gray-600 font-medium">Last Updated Date</td>
+                                        <td class="py-2 text-right font-semibold text-gray-700" id="dash-last-updated">-</td>
+                                    </tr>
+                                    <tr class="border-b border-gray-200">
+                                        <td class="py-2 text-gray-600 font-medium">Last Analysed Date</td>
+                                        <td class="py-2 text-right font-semibold text-gray-700" id="dash-last-analysed">-</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="py-2 text-gray-600 font-medium">Current Pending</td>
+                                        <td class="py-2 text-right font-bold text-warning cursor-pointer hover:text-orange-600 hover:underline" id="dash-pending" onclick="window.location.href='clusters-view.html?filter=pending'">-</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Quick Actions -->
+                        <div class="space-y-2">
+                            <p class="text-xs text-gray-600 font-semibold mb-2">Quick Actions</p>
+                            
+                            <button onclick="window.location.href='cluster-engine.html'" class="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white px-3 py-2 rounded-lg text-xs font-medium transition-all shadow hover:shadow-md flex items-center justify-center">
+                                <svg class="w-3 h-3 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                Run Cluster Engine
+                            </button>
+                            
+                            <button onclick="window.location.href='data-import.html'" class="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-3 py-2 rounded-lg text-xs font-medium transition-all shadow hover:shadow-md flex items-center justify-center">
+                                <svg class="w-3 h-3 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                                Import & Export
+                            </button>
+                            
+                            <button onclick="window.location.href='clusters-view.html'" class="w-full bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white px-3 py-2 rounded-lg text-xs font-medium transition-all shadow hover:shadow-md flex items-center justify-center">
+                                <svg class="w-3 h-3 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                                View All Clusters
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Container 2: System Health -->
+                    <div class="bg-white rounded-lg shadow border border-gray-200 p-3 overflow-auto custom-scroll">
+                        <h2 class="text-sm font-bold text-gray-800 mb-3 pb-2 border-b flex items-center">
+                            <svg class="w-4 h-4 mr-2 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            System Health
+                        </h2>
+                        
+                        <div class="bg-gradient-to-br from-slate-50 to-gray-50 rounded-lg p-3">
+                            <table class="w-full text-xs">
+                                <tbody>
+                                    <tr class="border-b border-gray-200">
+                                        <td class="py-2 text-gray-600 font-medium">Geocoding Status</td>
+                                        <td class="py-2 text-right font-semibold" id="geocoding-status">-</td>
+                                    </tr>
+                                    <tr class="border-b border-gray-200">
+                                        <td class="py-2 text-gray-600 font-medium">Upload Function</td>
+                                        <td class="py-2 text-right font-semibold" id="upload-health">-</td>
+                                    </tr>
+                                    <tr class="border-b border-gray-200">
+                                        <td class="py-2 text-gray-600 font-medium">BigQuery Sync</td>
+                                        <td class="py-2 text-right font-semibold" id="bigquery-health">-</td>
+                                    </tr>
+                                    <tr class="border-b border-gray-200">
+                                        <td class="py-2 text-gray-600 font-medium">Geocoding Service</td>
+                                        <td class="py-2 text-right font-semibold" id="geocoding-health">-</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="py-2 text-gray-600 font-medium">Dashboard API</td>
+                                        <td class="py-2 text-right font-semibold" id="dashboard-health">-</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Container 3 -->
+                    <div class="bg-white rounded-lg shadow border border-gray-200 p-3">
+                        <h2 class="text-sm font-bold text-gray-800 mb-2">Container 3</h2>
+                        <p class="text-xs text-gray-500">Content here</p>
                     </div>
                 </div>
             </div>

@@ -272,20 +272,41 @@ def get_cases():
 @app.route('/api/smart-clusters/stats', methods=['GET'])
 def get_smart_cluster_stats():
     try:
-        # Query smart clusters statistics for last 14 days from max date
+        # Query for system overview metrics
         query = f"""
-        WITH max_date AS (
-            SELECT MAX(original_creation_date) as max_date
+        WITH patient_stats AS (
+            SELECT 
+                COUNT(*) as total_records,
+                MAX(patient_entry_date) as last_uploaded_date
+            FROM `{PROJECT_ID}.{DATASET_ID}.patient_records`
+        ),
+        cluster_stats AS (
+            SELECT 
+                COUNT(DISTINCT smart_cluster_id) as total_clusters,
+                MAX(original_creation_date) as last_analysed_date
             FROM `{PROJECT_ID}.{DATASET_ID}.smart_clusters`
+        ),
+        pending_stats AS (
+            SELECT 
+                COUNT(*) as total_pending
+            FROM (
+                SELECT DISTINCT patient_entry_date as date
+                FROM `{PROJECT_ID}.{DATASET_ID}.patient_records`
+                WHERE patient_entry_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)
+            ) all_dates
+            LEFT JOIN `{PROJECT_ID}.{DATASET_ID}.smart_processing_status` sps
+            ON all_dates.date = sps.date AND sps.status = 'COMPLETED'
+            WHERE sps.date IS NULL
         )
         SELECT 
-            COUNT(*) as total_clusters,
-            COUNTIF(accept_status = 'Accepted') as accepted_clusters,
-            COUNTIF(accept_status = 'Pending') as pending_clusters,
-            SUM(patient_count) as total_patients
-        FROM `{PROJECT_ID}.{DATASET_ID}.smart_clusters` s
-        CROSS JOIN max_date m
-        WHERE s.original_creation_date >= DATE_SUB(m.max_date, INTERVAL 14 DAY)
+            p.total_records,
+            c.total_clusters,
+            p.last_uploaded_date,
+            c.last_analysed_date,
+            pd.total_pending
+        FROM patient_stats p
+        CROSS JOIN cluster_stats c
+        CROSS JOIN pending_stats pd
         """
         
         query_job = client.query(query)
@@ -293,16 +314,20 @@ def get_smart_cluster_stats():
         
         for row in results:
             stats = {
-                'accepted_clusters': row.accepted_clusters or 0,
-                'pending_clusters': row.pending_clusters or 0,
-                'total_patients': row.total_patients or 0
+                'total_records': row.total_records or 0,
+                'total_clusters': row.total_clusters or 0,
+                'last_uploaded_date': str(row.last_uploaded_date) if row.last_uploaded_date else 'N/A',
+                'last_analysed_date': str(row.last_analysed_date) if row.last_analysed_date else 'N/A',
+                'total_pending': row.total_pending or 0
             }
             break
         else:
             stats = {
-                'accepted_clusters': 0,
-                'pending_clusters': 0,
-                'total_patients': 0
+                'total_records': 0,
+                'total_clusters': 0,
+                'last_uploaded_date': 'N/A',
+                'last_analysed_date': 'N/A',
+                'total_pending': 0
             }
         
         return jsonify({
@@ -319,6 +344,71 @@ def get_smart_cluster_stats():
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({'status': 'healthy'})
+
+@app.route('/api/health/services', methods=['GET'])
+def check_services_health():
+    health_status = {}
+    
+    # Upload Function - check by testing BigQuery connection
+    try:
+        query = f"SELECT COUNT(*) as count FROM `{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}` LIMIT 1"
+        query_job = client.query(query)
+        results = list(query_job.result())
+        health_status['Upload Function'] = 'healthy' if results else 'down'
+    except:
+        health_status['Upload Function'] = 'down'
+    
+    # BigQuery Sync - same as upload since they use same service
+    health_status['BigQuery Sync'] = health_status['Upload Function']
+    
+    # Geocoding Service - check by testing function endpoint
+    try:
+        import requests
+        response = requests.get('https://geocode-addresses-196547645490.asia-south1.run.app', timeout=5)
+        health_status['Geocoding Service'] = 'healthy' if response.status_code in [200, 404] else 'down'
+    except:
+        health_status['Geocoding Service'] = 'down'
+    
+    # Dashboard API - self
+    health_status['Dashboard API'] = 'healthy'
+    
+    return jsonify(health_status)
+
+@app.route('/api/geocoding/progress', methods=['GET'])
+def get_geocoding_progress():
+    try:
+        query = f"""
+        SELECT 
+            COUNT(*) as total_records,
+            COUNTIF(latitude IS NOT NULL AND longitude IS NOT NULL) as geocoded_records,
+            ROUND(COUNTIF(latitude IS NOT NULL AND longitude IS NOT NULL) / COUNT(*) * 100, 1) as completion_pct
+        FROM `{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}`
+        WHERE UPPER(pat_areatype) = 'URBAN'
+        """
+        
+        query_job = client.query(query)
+        results = query_job.result()
+        
+        for row in results:
+            progress = {
+                'total_records': row.total_records,
+                'geocoded_records': row.geocoded_records,
+                'completion_pct': float(row.completion_pct or 0)
+            }
+            break
+        else:
+            progress = {'total_records': 0, 'geocoded_records': 0, 'completion_pct': 0}
+        
+        return jsonify({
+            'success': True,
+            'data': progress
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
