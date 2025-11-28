@@ -340,7 +340,7 @@ def smart_abc_clustering(processing_date):
     """Smart ABC clustering with merge detection"""
     logger.info("Running smart ABC clustering...")
     
-    # Get rural patients for processing date
+    # Get rural patients for 7 days before processing date
     abc_query = f"""
     WITH base_clusters AS (
         SELECT 
@@ -355,7 +355,7 @@ def smart_abc_clustering(processing_date):
             ) AS cluster_count
         FROM `{SOURCE_TABLE}` AS t
         WHERE 
-            t.{PATIENT_ENTRY_DATE} = DATE('{processing_date}')
+            t.{PATIENT_ENTRY_DATE} BETWEEN DATE_SUB(DATE('{processing_date}'), INTERVAL 7 DAY) AND DATE_SUB(DATE('{processing_date}'), INTERVAL 1 DAY)
             AND t.{AREA_TYPE} = 'Rural'
             AND t.{VILLAGE_NAME} IS NOT NULL
     )
@@ -547,7 +547,7 @@ def smart_gis_clustering(processing_date):
     from sklearn.cluster import DBSCAN
     from sklearn.metrics.pairwise import haversine_distances
     
-    # Get urban patients for processing date
+    # Get urban patients for 7 days before processing date
     gis_query = f"""
     SELECT 
         {UNIQUE_ID},
@@ -556,7 +556,7 @@ def smart_gis_clustering(processing_date):
         {LONGITUDE}
     FROM `{SOURCE_TABLE}`
     WHERE 
-        {PATIENT_ENTRY_DATE} = DATE(@processing_date)
+        {PATIENT_ENTRY_DATE} BETWEEN DATE_SUB(DATE(@processing_date), INTERVAL 7 DAY) AND DATE_SUB(DATE(@processing_date), INTERVAL 1 DAY)
         AND {AREA_TYPE} = 'Urban'
         AND {LATITUDE} BETWEEN 8 AND 37
         AND {LONGITUDE} BETWEEN 68 AND 97
@@ -940,20 +940,38 @@ def health():
         except:
             status_summary = {}
         
-        # Get clustering statistics
-        cluster_query = f"""
-        SELECT 
-            COUNT(DISTINCT input_date) as dates_processed,
-            MAX(input_date) as last_processed_date,
-            COUNT(*) as total_clusters,
-            COUNTIF(algorithm_type = 'ABC') as abc_clusters,
-            COUNTIF(algorithm_type = 'GIS') as gis_clusters,
-            COUNTIF(algorithm_type = 'GIS' AND accept_status = 'Accepted') as gis_accepted,
-            COUNTIF(algorithm_type = 'GIS' AND accept_status = 'Pending') as gis_pending,
-            SUM(expansion_count) as total_expansions,
-            SUM(patient_count) as total_patients
-        FROM `{SMART_CLUSTERS_TABLE}`
-        """
+        # Get clustering statistics (considering overrides)
+        override_table = f"{PROJECT_ID}.{DATASET_ID}.cluster_status_overrides"
+        try:
+            client.get_table(override_table)
+            cluster_query = f"""
+            SELECT 
+                COUNT(DISTINCT c.input_date) as dates_processed,
+                MAX(c.input_date) as last_processed_date,
+                COUNT(*) as total_clusters,
+                COUNTIF(c.algorithm_type = 'ABC') as abc_clusters,
+                COUNTIF(c.algorithm_type = 'GIS') as gis_clusters,
+                COUNTIF(c.algorithm_type = 'GIS' AND COALESCE(o.new_status, c.accept_status) = 'Accepted') as gis_accepted,
+                COUNTIF(c.algorithm_type = 'GIS' AND COALESCE(o.new_status, c.accept_status) = 'Pending') as gis_pending,
+                SUM(c.expansion_count) as total_expansions,
+                SUM(c.patient_count) as total_patients
+            FROM `{SMART_CLUSTERS_TABLE}` c
+            LEFT JOIN `{override_table}` o ON c.smart_cluster_id = o.smart_cluster_id
+            """
+        except:
+            cluster_query = f"""
+            SELECT 
+                COUNT(DISTINCT input_date) as dates_processed,
+                MAX(input_date) as last_processed_date,
+                COUNT(*) as total_clusters,
+                COUNTIF(algorithm_type = 'ABC') as abc_clusters,
+                COUNTIF(algorithm_type = 'GIS') as gis_clusters,
+                COUNTIF(algorithm_type = 'GIS' AND accept_status = 'Accepted') as gis_accepted,
+                COUNTIF(algorithm_type = 'GIS' AND accept_status = 'Pending') as gis_pending,
+                SUM(expansion_count) as total_expansions,
+                SUM(patient_count) as total_patients
+            FROM `{SMART_CLUSTERS_TABLE}`
+            """
         
         try:
             cluster_df = client.query(cluster_query).to_dataframe()
@@ -1065,12 +1083,23 @@ def smart_process():
 def smart_preflight():
     """Combined data quality check and test clustering"""
     try:
-        # Check for pending clusters
-        pending_query = f"""
-        SELECT COUNT(*) as pending_count
-        FROM `{SMART_CLUSTERS_TABLE}`
-        WHERE algorithm_type = 'GIS' AND accept_status = 'Pending'
-        """
+        # Check for pending clusters (considering overrides)
+        override_table = f"{PROJECT_ID}.{DATASET_ID}.cluster_status_overrides"
+        try:
+            client.get_table(override_table)
+            pending_query = f"""
+            SELECT COUNT(*) as pending_count
+            FROM `{SMART_CLUSTERS_TABLE}` c
+            LEFT JOIN `{override_table}` o ON c.smart_cluster_id = o.smart_cluster_id
+            WHERE c.algorithm_type = 'GIS' 
+              AND COALESCE(o.new_status, c.accept_status) = 'Pending'
+            """
+        except:
+            pending_query = f"""
+            SELECT COUNT(*) as pending_count
+            FROM `{SMART_CLUSTERS_TABLE}`
+            WHERE algorithm_type = 'GIS' AND accept_status = 'Pending'
+            """
         
         try:
             pending_df = client.query(pending_query).to_dataframe()
@@ -1528,7 +1557,8 @@ def smart_truncate():
             SMART_CLUSTERS_TABLE,
             SMART_ASSIGNMENTS_TABLE,
             SMART_MERGE_HISTORY_TABLE,
-            f"{PROJECT_ID}.{DATASET_ID}.smart_processing_status"
+            f"{PROJECT_ID}.{DATASET_ID}.smart_processing_status",
+            f"{PROJECT_ID}.{DATASET_ID}.cluster_status_overrides"
         ]
         
         truncated_tables = []

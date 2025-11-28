@@ -217,6 +217,10 @@
         async function checkHealth() {
             if (completedSteps.includes(1)) return;
             
+            // Freeze button
+            const button = document.querySelector('#step1-container button');
+            button.disabled = true;
+            
             setStepActive(1);
             updateStepStatus(1, 'RUNNING', 'status-running');
             
@@ -243,15 +247,23 @@
                 } else {
                     updateStepStatus(1, 'FAILED', 'status-error');
                     showStepResult(1, `<div class="text-red-400 text-xs">${data.error || 'Connection failed'}</div>`);
+                    // Re-enable button on failure
+                    document.querySelector('#step1-container button').disabled = false;
                 }
             } catch (error) {
                 updateStepStatus(1, 'ERROR', 'status-error');
                 showStepResult(1, `<div class="text-red-400 text-xs">${error.message}</div>`);
+                // Re-enable button on error
+                document.querySelector('#step1-container button').disabled = false;
             }
         }
 
         async function checkQuality() {
             if (completedSteps.includes(2)) return;
+            
+            // Freeze button
+            const button = document.querySelector('#step2-container button');
+            button.disabled = true;
             
             setStepActive(2);
             updateStepStatus(2, 'RUNNING', 'status-running');
@@ -285,15 +297,23 @@
                         failReason += `<button onclick="window.location.href='clusters-view.html'" class="bg-orange-600 hover:bg-orange-700 text-white px-3 py-2 rounded text-xs font-medium mt-2 w-full">REVIEW PENDING CLUSTERS</button>`;
                     }
                     showStepResult(2, `<div class="text-red-400 text-xs">${failReason}</div>`);
+                    // Re-enable button on failure
+                    document.querySelector('#step2-container button').disabled = false;
                 }
             } catch (error) {
                 updateStepStatus(2, 'ERROR', 'status-error');
                 showStepResult(2, `<div class="text-red-400 text-xs">${error.message}</div>`);
+                // Re-enable button on error
+                document.querySelector('#step2-container button').disabled = false;
             }
         }
 
         async function processClusters() {
             if (completedSteps.includes(3)) return;
+            
+            // Freeze button
+            const button = document.querySelector('#step3-container button');
+            button.disabled = true;
             
             setStepActive(3);
             updateStepStatus(3, 'PROCESSING', 'status-running');
@@ -309,7 +329,7 @@
                             <div class="metric-label">Process Date</div>
                             <div class="metric-value text-sm">${data.date_processed}</div>
                         </div>
-                        <div class="grid grid-cols-2 gap-2 mt-2">
+                        <div class="grid grid-cols-2 gap-1 mt-2">
                             <div class="metric-box">
                                 <div class="metric-label">ABC Clusters</div>
                                 <div class="metric-value">${data.abc_clusters}</div>
@@ -318,24 +338,77 @@
                                 <div class="metric-label">GIS Clusters</div>
                                 <div class="metric-value">${data.gis_clusters}</div>
                             </div>
+                            <div class="metric-box">
+                                <div class="metric-label">ABC Expansions</div>
+                                <div class="metric-value">${data.abc_expansions}</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-label">GIS Expansions</div>
+                                <div class="metric-value">${data.gis_expansions}</div>
+                            </div>
                         </div>
                     `);
                     completedSteps.push(3);
                     setStepCompleted(3);
                     disableStep(3);
                     enableStep(4);
+                    
+                    // Show "Process Next Date" button
+                    showProcessNextButton();
                 } else {
                     updateStepStatus(3, 'FAILED', 'status-error');
                     showStepResult(3, `<div class="text-red-400 text-xs">${data.message || 'Processing failed'}</div>`);
+                    // Re-enable button on failure
+                    document.querySelector('#step3-container button').disabled = false;
                 }
             } catch (error) {
                 updateStepStatus(3, 'ERROR', 'status-error');
                 showStepResult(3, `<div class="text-red-400 text-xs">${error.message}</div>`);
+                // Re-enable button on error
+                document.querySelector('#step3-container button').disabled = false;
             }
         }
 
         function goToPendingClusters() {
-            window.location.href = 'clusters-view.html';
+            window.open('clusters-view.html', '_blank');
+        }
+        
+        function showProcessNextButton() {
+            const step4Results = document.getElementById('step4-results');
+            const step4Message = document.getElementById('step4-message');
+            step4Message.innerHTML = `
+                <button onclick="processNextDate()" class="engine-btn text-white px-4 py-3 rounded-lg text-xs w-full mt-2">
+                    PROCESS NEXT DATE
+                </button>
+            `;
+            step4Results.classList.remove('hidden');
+        }
+        
+        async function processNextDate() {
+            // Reset all steps and start over
+            completedSteps = [];
+            document.querySelectorAll('.engine-card').forEach(card => {
+                card.classList.remove('active', 'completed');
+            });
+            document.querySelectorAll('.status-indicator').forEach(indicator => {
+                indicator.className = 'status-indicator status-idle';
+            });
+            document.querySelectorAll('[id$="-status"]').forEach(status => {
+                status.textContent = 'IDLE';
+            });
+            document.querySelectorAll('[id$="-results"]').forEach(results => {
+                results.classList.add('hidden');
+            });
+            
+            // Re-enable step 1 button
+            document.querySelector('#step1-container button').disabled = false;
+            
+            // Disable other buttons
+            document.querySelector('#step2-container button').disabled = true;
+            document.querySelector('#step3-container button').disabled = true;
+            document.querySelector('#step4-container button').disabled = true;
+            
+            updateProgress(0);
         }
     </script>
 

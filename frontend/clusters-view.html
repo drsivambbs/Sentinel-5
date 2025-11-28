@@ -297,7 +297,7 @@
             const tbody = document.getElementById('tableBody');
             
             if (filteredClusters.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-gray-400">No clusters found.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="10" class="text-center py-8 text-gray-400">No clusters found.</td></tr>`;
                 document.getElementById('recordCount').textContent = '0 clusters';
                 document.getElementById('pageInfo').textContent = '0-0 of 0';
                 updatePaginationButtons();
@@ -334,6 +334,16 @@
                         </td>
                         <td class="px-2 py-1.5 text-xs text-gray-700">${cluster.algorithm_type || 'N/A'}</td>
                         <td class="px-2 py-1.5 text-xs text-gray-700 text-center font-semibold">${cluster.patient_count || 0}</td>
+                        <td class="px-2 py-1.5 text-xs text-center">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cluster.expansion_count > 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}">
+                                ${cluster.expansion_count || 0}
+                            </span>
+                        </td>
+                        <td class="px-2 py-1.5 text-xs text-center text-gray-700">
+                            ${cluster.algorithm_type === 'GIS' && cluster.actual_cluster_radius ? 
+                                `<span class="font-mono">${Math.round(cluster.actual_cluster_radius)}m</span>` : 
+                                '<span class="text-gray-400">-</span>'}
+                        </td>
                         <td class="px-2 py-1.5 text-xs text-gray-600">${cluster.most_common_site_code || 'N/A'}</td>
                         <td class="px-2 py-1.5 text-xs text-gray-600">${cluster.primary_syndrome || 'N/A'}</td>
                         <td class="px-2 py-1.5 text-xs text-gray-600">${cluster.original_creation_date || 'N/A'}</td>
@@ -474,6 +484,8 @@
                                 <th class="text-xs font-semibold text-gray-600">Cluster ID</th>
                                 <th class="text-xs font-semibold text-gray-600">Algo</th>
                                 <th class="text-xs font-semibold text-gray-600 text-center">Cases</th>
+                                <th class="text-xs font-semibold text-gray-600 text-center">Expansions</th>
+                                <th class="text-xs font-semibold text-gray-600 text-center">Radius (m)</th>
                                 <th class="text-xs font-semibold text-gray-600">Site Code</th>
                                 <th class="text-xs font-semibold text-gray-600">Syndrome</th>
                                 <th class="text-xs font-semibold text-gray-600">Creation Date</th>
@@ -482,7 +494,7 @@
                             </tr>
                         </thead>
                         <tbody id="tableBody">
-                            <tr><td colspan="8" class="text-center py-6 text-gray-400 text-xs">Loading clusters...</td></tr>
+                            <tr><td colspan="10" class="text-center py-6 text-gray-400 text-xs">Loading clusters...</td></tr>
                         </tbody>
                     </table>
                 </div>
