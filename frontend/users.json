@@ -1,0 +1,10 @@
+[
+  {
+    "uid": "admin001",
+    "email": "admin@sentinel.com",
+    "emailVerified": true,
+    "passwordHash": "password123",
+    "displayName": "Admin User",
+    "disabled": false
+  }
+]

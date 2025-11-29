@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Data Management System</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="dist/output.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <style>
         .custom-scroll::-webkit-scrollbar {
@@ -57,26 +57,12 @@
             border-right: 0;
         }
     </style>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                    },
-                    colors: {
-                        primary: '#3b82f6',
-                        success: '#10b981',
-                        warning: '#f59e0b',
-                        danger: '#ef4444',
-                        background: '#f8fafc',
-                    }
-                }
-            }
-        }
-    </script>
+
 </head>
 <body class="bg-background font-sans antialiased text-gray-800">
+
+    <!-- Firebase Auth -->
+    <script type="module" src="auth.js"></script>
 
     <script>
         const DASHBOARD_API = 'https://dashboard-api-196547645490.asia-south1.run.app';
@@ -85,6 +71,7 @@
         window.onload = function() {
             console.log('Application loaded');
             loadDashboard();
+            loadConfiguration(); // Load saved settings
         };
         
         window.toggleSidebar = function() {
@@ -114,6 +101,9 @@
                 
                 // Load geocoding status and health checks
                 await loadSystemHealth();
+                
+                // Load tuning parameters
+                loadTuningParameters();
                 
             } catch (error) {
                 console.error('Error loading dashboard:', error);
@@ -340,6 +330,31 @@
         window.cancelAction = function() {
             document.getElementById('confirmationModal').classList.add('hidden');
         }
+
+        // Edit Configuration Warning
+        window.showEditWarning = function() {
+            document.getElementById('editWarningModal').classList.remove('hidden');
+        }
+
+        window.confirmEditWarning = function() {
+            document.getElementById('editWarningModal').classList.add('hidden');
+            // Enable all config inputs
+            document.querySelectorAll('.config-input').forEach(input => {
+                input.disabled = false;
+                input.classList.remove('bg-gray-100', 'cursor-not-allowed');
+                input.classList.add('focus:ring-1', 'focus:ring-primary', 'focus:border-primary');
+            });
+            // Enable save button
+            const saveBtn = document.getElementById('saveConfigBtn');
+            saveBtn.disabled = false;
+            saveBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            // Hide edit button
+            document.getElementById('editConfigBtn').classList.add('hidden');
+        }
+
+        window.cancelEditWarning = function() {
+            document.getElementById('editWarningModal').classList.add('hidden');
+        }
         
         // Add Cluster/Merge Modals
         window.showAddClusterModal = function() {
@@ -370,6 +385,74 @@
                 notif.classList.add('opacity-0', 'transition-opacity', 'duration-500');
                 notif.addEventListener('transitionend', () => container.removeChild(notif));
             }, 3000);
+        }
+
+        // Load settings from localStorage on page load
+        window.loadConfiguration = function() {
+            const savedConfig = localStorage.getItem('clusterConfig');
+            if (savedConfig) {
+                const config = JSON.parse(savedConfig);
+                document.getElementById('dbscan_epsilon').value = config.dbscan_epsilon_m || 500;
+                document.getElementById('max_cluster_radius').value = config.max_cluster_radius || 800;
+                document.getElementById('min_cluster_size').value = config.min_cluster_size || 2;
+                document.getElementById('time_window_days').value = config.time_window_days || 6;
+                document.getElementById('max_cluster_age').value = config.max_cluster_age_days || 7;
+                document.getElementById('geocoding_threshold').value = config.geocoding_threshold || 0.85;
+                document.getElementById('auto_accept_radius').value = config.auto_accept_radius_threshold || 200;
+            }
+        }
+
+        window.saveConfiguration = function() {
+            const config = {
+                dbscan_epsilon_m: parseInt(document.getElementById('dbscan_epsilon').value),
+                max_cluster_radius: parseInt(document.getElementById('max_cluster_radius').value),
+                min_cluster_size: parseInt(document.getElementById('min_cluster_size').value),
+                time_window_days: parseInt(document.getElementById('time_window_days').value),
+                max_cluster_age_days: parseInt(document.getElementById('max_cluster_age').value),
+                geocoding_threshold: parseFloat(document.getElementById('geocoding_threshold').value),
+                auto_accept_radius_threshold: parseInt(document.getElementById('auto_accept_radius').value),
+                updated_at: new Date().toISOString()
+            };
+            
+            // Save to localStorage
+            localStorage.setItem('clusterConfig', JSON.stringify(config));
+            
+            showNotification('Configuration saved successfully!', 'success');
+            
+            // Disable inputs again after save
+            document.querySelectorAll('.config-input').forEach(input => {
+                input.disabled = true;
+                input.classList.add('bg-gray-100', 'cursor-not-allowed');
+            });
+            document.getElementById('saveConfigBtn').disabled = true;
+            document.getElementById('saveConfigBtn').classList.add('opacity-50', 'cursor-not-allowed');
+            document.getElementById('editConfigBtn').classList.remove('hidden');
+        }
+
+        // Get current configuration for API calls
+        window.getConfiguration = function() {
+            const savedConfig = localStorage.getItem('clusterConfig');
+            return savedConfig ? JSON.parse(savedConfig) : {
+                dbscan_epsilon_m: 500,
+                max_cluster_radius: 800,
+                min_cluster_size: 2,
+                time_window_days: 6,
+                max_cluster_age_days: 7,
+                geocoding_threshold: 0.85,
+                auto_accept_radius_threshold: 200
+            };
+        }
+
+        // Load tuning parameters in dashboard
+        window.loadTuningParameters = function() {
+            const config = getConfiguration();
+            document.getElementById('param-dbscan').textContent = config.dbscan_epsilon_m + 'm';
+            document.getElementById('param-radius').textContent = config.max_cluster_radius + 'm';
+            document.getElementById('param-size').textContent = config.min_cluster_size;
+            document.getElementById('param-time').textContent = config.time_window_days + ' days';
+            document.getElementById('param-age').textContent = config.max_cluster_age_days + ' days';
+            document.getElementById('param-geocoding').textContent = (config.geocoding_threshold * 100) + '%';
+            document.getElementById('param-accept').textContent = config.auto_accept_radius_threshold + 'm';
         }
     </script>
 
@@ -414,7 +497,8 @@
                 </div>
                 
                 <div class="px-3 py-2 border-t border-gray-200">
-                    <p id="userIdDisplay" class="text-xs text-gray-500 truncate">Local Mode</p>
+                    <p id="userIdDisplay" class="text-xs text-gray-500 truncate">Loading...</p>
+                    <button onclick="logout()" class="mt-1 text-xs text-danger hover:underline">Logout</button>
                 </div>
             </div>
         </div>
@@ -522,10 +606,47 @@
                         </div>
                     </div>
 
-                    <!-- Container 3 -->
-                    <div class="bg-white rounded-lg shadow border border-gray-200 p-3">
-                        <h2 class="text-sm font-bold text-gray-800 mb-2">Container 3</h2>
-                        <p class="text-xs text-gray-500">Content here</p>
+                    <!-- Container 3: Tuning Parameters -->
+                    <div class="bg-white rounded-lg shadow border border-gray-200 p-3 overflow-auto custom-scroll">
+                        <h2 class="text-sm font-bold text-gray-800 mb-3 pb-2 border-b flex items-center">
+                            <svg class="w-4 h-4 mr-2 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4"></path></svg>
+                            Tuning Parameters
+                        </h2>
+                        
+                        <div class="bg-gradient-to-br from-slate-50 to-gray-50 rounded-lg p-3">
+                            <table class="w-full text-xs">
+                                <tbody>
+                                    <tr class="border-b border-gray-200">
+                                        <td class="py-2 text-gray-600 font-medium">DBSCAN Epsilon</td>
+                                        <td class="py-2 text-right font-semibold text-gray-700" id="param-dbscan">500m</td>
+                                    </tr>
+                                    <tr class="border-b border-gray-200">
+                                        <td class="py-2 text-gray-600 font-medium">Max Cluster Radius</td>
+                                        <td class="py-2 text-right font-semibold text-gray-700" id="param-radius">800m</td>
+                                    </tr>
+                                    <tr class="border-b border-gray-200">
+                                        <td class="py-2 text-gray-600 font-medium">Min Cluster Size</td>
+                                        <td class="py-2 text-right font-semibold text-gray-700" id="param-size">2</td>
+                                    </tr>
+                                    <tr class="border-b border-gray-200">
+                                        <td class="py-2 text-gray-600 font-medium">Time Window</td>
+                                        <td class="py-2 text-right font-semibold text-gray-700" id="param-time">6 days</td>
+                                    </tr>
+                                    <tr class="border-b border-gray-200">
+                                        <td class="py-2 text-gray-600 font-medium">Max Cluster Age</td>
+                                        <td class="py-2 text-right font-semibold text-gray-700" id="param-age">7 days</td>
+                                    </tr>
+                                    <tr class="border-b border-gray-200">
+                                        <td class="py-2 text-gray-600 font-medium">Geocoding Threshold</td>
+                                        <td class="py-2 text-right font-semibold text-gray-700" id="param-geocoding">85%</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="py-2 text-gray-600 font-medium">Auto Accept Radius</td>
+                                        <td class="py-2 text-right font-semibold text-gray-700" id="param-accept">200m</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -676,10 +797,68 @@
 
             <!-- Settings Section -->
             <div class="section hidden flex-col h-full" id="settings">
-                <div class="flex items-center justify-center h-full">
-                    <div class="text-center">
-                        <h1 class="text-2xl font-bold text-gray-800 mb-2">Settings</h1>
-                        <p class="text-sm text-gray-500">Coming soon...</p>
+                <!-- Compact Header -->
+                <div class="bg-white border-b border-gray-200 px-3 py-2">
+                    <h1 class="text-lg font-bold text-gray-800">Settings</h1>
+                </div>
+
+                <!-- 3 Container Layout -->
+                <div class="flex-1 p-2 grid grid-cols-3 gap-2">
+                    <!-- Container 1: Configuration Parameters -->
+                    <div class="bg-white rounded-lg shadow border border-gray-200 p-3 overflow-auto custom-scroll">
+                        <h2 class="text-sm font-bold text-gray-800 mb-2 pb-2 border-b flex items-center justify-between">
+                            <div class="flex items-center">
+                                <svg class="w-4 h-4 mr-2 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                                Configuration Parameters
+                            </div>
+                            <button id="editConfigBtn" onclick="showEditWarning()" class="bg-gray-500 hover:bg-gray-600 text-white px-2 py-1 rounded text-xs font-medium transition-colors flex items-center">
+                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                                Edit
+                            </button>
+                        </h2>
+                        <div class="space-y-2">
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-0.5">DBSCAN Epsilon (m)</label>
+                                <input type="number" id="dbscan_epsilon" class="config-input w-full px-2 py-1 border border-gray-300 rounded text-xs bg-gray-100 cursor-not-allowed" value="500" disabled>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-0.5">Max Cluster Radius (m)</label>
+                                <input type="number" id="max_cluster_radius" class="config-input w-full px-2 py-1 border border-gray-300 rounded text-xs bg-gray-100 cursor-not-allowed" value="800" disabled>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-0.5">Min Cluster Size</label>
+                                <input type="number" id="min_cluster_size" class="config-input w-full px-2 py-1 border border-gray-300 rounded text-xs bg-gray-100 cursor-not-allowed" value="2" disabled>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-0.5">Time Window (days)</label>
+                                <input type="number" id="time_window_days" class="config-input w-full px-2 py-1 border border-gray-300 rounded text-xs bg-gray-100 cursor-not-allowed" value="6" disabled>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-0.5">Max Cluster Age (days)</label>
+                                <input type="number" id="max_cluster_age" class="config-input w-full px-2 py-1 border border-gray-300 rounded text-xs bg-gray-100 cursor-not-allowed" value="7" disabled>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-0.5">Geocoding Threshold</label>
+                                <input type="number" step="0.01" id="geocoding_threshold" class="config-input w-full px-2 py-1 border border-gray-300 rounded text-xs bg-gray-100 cursor-not-allowed" value="0.85" disabled>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-0.5">Auto Accept Radius (m)</label>
+                                <input type="number" id="auto_accept_radius" class="config-input w-full px-2 py-1 border border-gray-300 rounded text-xs bg-gray-100 cursor-not-allowed" value="200" disabled>
+                            </div>
+                            <button id="saveConfigBtn" onclick="saveConfiguration()" class="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-1.5 px-3 rounded-lg text-xs font-medium transition-all shadow hover:shadow-md mt-2 opacity-50 cursor-not-allowed" disabled>Save Configuration</button>
+                        </div>
+                    </div>
+
+                    <!-- Container 2 -->
+                    <div class="bg-white rounded-lg shadow-md border border-gray-200 p-4">
+                        <h2 class="text-base font-bold text-gray-800 mb-4 pb-2 border-b border-gray-300">Container 2</h2>
+                        <p class="text-sm text-gray-500">Content here</p>
+                    </div>
+
+                    <!-- Container 3 -->
+                    <div class="bg-white rounded-lg shadow-md border border-gray-200 p-4">
+                        <h2 class="text-base font-bold text-gray-800 mb-4 pb-2 border-b border-gray-300">Container 3</h2>
+                        <p class="text-sm text-gray-500">Content here</p>
                     </div>
                 </div>
             </div>
@@ -696,6 +875,21 @@
             <div class="flex justify-end space-x-3">
                 <button onclick="cancelAction()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-medium py-2 px-4 rounded-lg transition-colors">Cancel</button>
                 <button onclick="confirmAction()" class="bg-danger hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition-colors">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Configuration Warning Modal -->
+    <div id="editWarningModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md transform transition-all">
+            <div class="flex items-center mb-4">
+                <svg class="w-8 h-8 text-warning mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                <h3 class="text-lg font-bold text-gray-800">Warning: Algorithm Configuration</h3>
+            </div>
+            <p class="text-sm text-gray-700 mb-6">Editing these settings will affect the overall clustering algorithm behavior. Changes may impact how clusters are detected and processed. Do you want to continue?</p>
+            <div class="flex justify-end space-x-3">
+                <button onclick="cancelEditWarning()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-medium py-2 px-4 rounded-lg transition-colors text-sm">No, I don't want to</button>
+                <button onclick="confirmEditWarning()" class="bg-warning hover:bg-yellow-600 text-white font-medium py-2 px-4 rounded-lg transition-colors text-sm">Yes, I agree</button>
             </div>
         </div>
     </div>

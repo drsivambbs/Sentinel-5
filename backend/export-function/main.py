@@ -45,7 +45,7 @@ def export_data(request):
         
         client = bigquery.Client(project='sentinel-h-5')
         
-        # Main export - all patients from active clusters
+        # Main export - ALL patients from clusters active in date range
         query = f"""
         WITH active_clusters AS (
             SELECT DISTINCT smart_cluster_id
@@ -109,8 +109,14 @@ def export_data(request):
             'villagename': 'Village'
         })
         
-        # Query for expansion cases (cases added to existing clusters)
+        # Query for newly added cases (cases added AFTER cluster creation date)
         expansion_query = f"""
+        WITH active_clusters AS (
+            SELECT smart_cluster_id, original_creation_date
+            FROM `sentinel-h-5.sentinel_h_5.smart_clusters`
+            WHERE input_date >= '{start_date.strftime('%Y-%m-%d')}'
+            AND input_date <= '{end_date.strftime('%Y-%m-%d')}'
+        )
         SELECT 
             p.site_code,
             a.smart_cluster_id,
@@ -127,10 +133,11 @@ def export_data(request):
             p.villagename
         FROM `sentinel-h-5.sentinel_h_5.smart_cluster_assignments` a
         JOIN `sentinel-h-5.sentinel_h_5.patient_records` p ON a.unique_id = p.unique_id
+        JOIN active_clusters ac ON a.smart_cluster_id = ac.smart_cluster_id
         WHERE a.addition_type = 'EXPANSION'
         AND a.expansion_date >= '{start_date.strftime('%Y-%m-%d')}'
         AND a.expansion_date <= '{end_date.strftime('%Y-%m-%d')}'
-        ORDER BY p.patient_entry_date DESC
+        ORDER BY a.smart_cluster_id, a.expansion_date DESC
         """
         
         expansion_df = client.query(expansion_query).to_dataframe()
@@ -181,9 +188,9 @@ def export_data(request):
             summary_df.to_excel(writer, sheet_name='Summary', index=False)
             
             # Data sheets
-            export_df.to_excel(writer, sheet_name='Clustered_Cases', index=False)
+            export_df.to_excel(writer, sheet_name='All_Cluster_Cases', index=False)
             if not expansion_df.empty:
-                expansion_df.to_excel(writer, sheet_name='New Cases Added', index=False)
+                expansion_df.to_excel(writer, sheet_name='Newly_Added_Cases', index=False)
         
         output.seek(0)
         
