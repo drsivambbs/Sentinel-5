@@ -212,6 +212,7 @@
                         cluster_status: cluster?.accept_status || 'N/A'
                     }));
                     applyFilters();
+                    updateClusterDetails(cluster); // Update details with patient data
                     showNotification(`Loaded ${allPatients.length} patients`, 'success');
                 } else {
                     throw new Error(data.error || 'Failed to load patients');
@@ -236,9 +237,30 @@
             document.getElementById('detailClusterId').textContent = cluster.smart_cluster_id;
             document.getElementById('detailAlgorithm').textContent = cluster.algorithm_type;
             document.getElementById('detailStatus').textContent = cluster.accept_status;
-            document.getElementById('detailPatientCount').textContent = cluster.patient_count;
-            document.getElementById('detailDateRange').textContent = `${cluster.start_date} to ${cluster.end_date}`;
-            document.getElementById('detailSyndrome').textContent = cluster.syndrome || 'Mixed';
+            // Show actual loaded patient count
+            const actualPatientCount = allPatients.filter(p => p.cluster_id === cluster.smart_cluster_id).length;
+            document.getElementById('detailPatientCount').textContent = actualPatientCount > 0 ? actualPatientCount : cluster.patient_count;
+            
+            // Calculate date range from patient data
+            if (allPatients.length > 0) {
+                const clusterPatients = allPatients.filter(p => p.cluster_id === cluster.smart_cluster_id);
+                if (clusterPatients.length > 0) {
+                    const dates = clusterPatients.map(p => new Date(p.patient_entry_date)).filter(d => !isNaN(d));
+                    if (dates.length > 0) {
+                        const minDate = new Date(Math.min(...dates)).toISOString().split('T')[0];
+                        const maxDate = new Date(Math.max(...dates)).toISOString().split('T')[0];
+                        document.getElementById('detailDateRange').textContent = minDate === maxDate ? minDate : `${minDate} to ${maxDate}`;
+                    } else {
+                        document.getElementById('detailDateRange').textContent = cluster.original_creation_date || '-';
+                    }
+                } else {
+                    document.getElementById('detailDateRange').textContent = cluster.original_creation_date || '-';
+                }
+            } else {
+                document.getElementById('detailDateRange').textContent = cluster.original_creation_date || '-';
+            }
+            
+            document.getElementById('detailSyndrome').textContent = cluster.primary_syndrome || 'Mixed';
             
             panel.classList.remove('hidden');
         }
@@ -368,6 +390,18 @@
         function updateTable() {
             const tbody = document.getElementById('tableBody');
             
+            // Check if we have GIS patients to determine village column visibility
+            const hasGISPatients = filteredPatients.some(p => p.algorithm_type === 'GIS');
+            const villageHeader = document.getElementById('villageHeader');
+            
+            if (hasGISPatients && filteredPatients.every(p => p.algorithm_type === 'GIS')) {
+                // All patients are GIS - hide village column completely
+                villageHeader.style.display = 'none';
+            } else {
+                // Mixed or all ABC - show village column
+                villageHeader.style.display = '';
+            }
+            
             if (filteredPatients.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="14" class="text-center py-8 text-gray-400">No patients found. Select a cluster or load all.</td></tr>';
                 document.getElementById('recordCount').textContent = '0 patients';
@@ -392,6 +426,10 @@
                 const sexMap = { '1': 'Male', '2': 'Female', '3': 'Other' };
                 const sex = sexMap[patient.pat_sex] || patient.pat_sex || 'N/A';
                 
+                // Use backend addition_type as-is
+                const correctedAdditionType = patient.addition_type || 'ORIGINAL';
+                const correctedExpansionDate = correctedAdditionType === 'EXPANSION' ? patient.patient_entry_date : '-';
+                const isGIS = patient.algorithm_type === 'GIS';
                 return `
                     <tr class="border-b border-gray-100">
                         <td class="px-2 py-2 font-mono text-xs">${patient.cluster_id || 'N/A'}</td>
@@ -408,14 +446,14 @@
                         <td class="px-2 py-2">${patient.site_code || 'N/A'}</td>
                         <td class="px-2 py-2">${patient.statename || 'N/A'}</td>
                         <td class="px-2 py-2">${patient.districtname || 'N/A'}</td>
-                        <td class="px-2 py-2">${patient.villagename || 'N/A'}</td>
-                        <td class="px-2 py-2">${patient.clini_primary_syn || 'N/A'}</td>
+                        <td class="village-column px-2 py-2" ${isGIS ? 'style="display: none;"' : ''}>${patient.villagename || 'N/A'}</td>
+                        <td class="px-2 py-2" style="display: none;">${patient.clini_primary_syn || 'N/A'}</td>
                         <td class="px-2 py-2 text-center">
-                            <span class="px-2 py-0.5 rounded text-xs font-medium ${patient.addition_type === 'ORIGINAL' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}">
-                                ${patient.addition_type || 'N/A'}
+                            <span class="px-2 py-0.5 rounded text-xs font-medium ${correctedAdditionType === 'ORIGINAL' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}">
+                                ${correctedAdditionType}
                             </span>
                         </td>
-                        <td class="px-2 py-2">${patient.expansion_date || '-'}</td>
+                        <td class="px-2 py-2">${correctedExpansionDate}</td>
                     </tr>
                 `;
             }).join('');
@@ -719,8 +757,8 @@
                                 <th class="text-xs font-semibold text-gray-600">Site Code</th>
                                 <th class="text-xs font-semibold text-gray-600">State</th>
                                 <th class="text-xs font-semibold text-gray-600">District</th>
-                                <th class="text-xs font-semibold text-gray-600">Village</th>
-                                <th class="text-xs font-semibold text-gray-600">Syndrome</th>
+                                <th id="villageHeader" class="text-xs font-semibold text-gray-600">Village</th>
+                                <th class="text-xs font-semibold text-gray-600" style="display: none;">Syndrome</th>
                                 <th class="text-xs font-semibold text-gray-600 text-center">Addition Type</th>
                                 <th class="text-xs font-semibold text-gray-600">Expansion Date</th>
                             </tr>
