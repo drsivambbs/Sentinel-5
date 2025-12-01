@@ -427,6 +427,7 @@ def find_mergeable_abc_cluster(processing_date, state, district, subdistrict, vi
 def expand_abc_cluster(existing_cluster, new_patients, processing_date):
     """Expand existing ABC cluster with new patients"""
     cluster_id = existing_cluster['smart_cluster_id']
+    original_creation_date = existing_cluster['original_creation_date']
     
     # Get existing patients
     existing_query = f"""
@@ -453,16 +454,27 @@ def expand_abc_cluster(existing_cluster, new_patients, processing_date):
         logger.info(f"No new patients to add to {cluster_id}")
         return
     
-    # Add new assignments
+    # Add new assignments with chronological labeling
     assignments_to_insert = []
-    for patient_id in truly_new_patients:
+    for _, patient in new_patients[new_patients[UNIQUE_ID].isin(truly_new_patients)].iterrows():
+        patient_disease_date = patient[PATIENT_ENTRY_DATE]
+        
+        # Label based on disease date vs cluster creation date
+        # original_creation_date is the processing_date when cluster was first created
+        if patient_disease_date < original_creation_date:
+            addition_type = 'ORIGINAL'
+            expansion_date = None
+        else:
+            addition_type = 'EXPANSION'
+            expansion_date = processing_date
+        
         assignments_to_insert.append({
             'assignment_id': str(uuid.uuid4()),
             'smart_cluster_id': cluster_id,
-            'unique_id': patient_id,
+            'unique_id': patient[UNIQUE_ID],
             'assigned_at': datetime.now(timezone.utc).isoformat(),
-            'addition_type': 'EXPANSION',
-            'expansion_date': processing_date
+            'addition_type': addition_type,
+            'expansion_date': expansion_date
         })
     
     insert_rows_safe(SMART_ASSIGNMENTS_TABLE, assignments_to_insert)
@@ -505,7 +517,7 @@ def create_new_abc_cluster(patients_group, processing_date, village):
     """Create new ABC cluster"""
     cluster_id = f"SMART-ABC-{int(time.time())}-{uuid.uuid4().hex[:8]}"
     
-    # Create cluster record
+    # Create cluster record with processing_date as original_creation_date
     cluster_record = {
         'smart_cluster_id': cluster_id,
         'algorithm_type': 'ABC',
@@ -524,7 +536,7 @@ def create_new_abc_cluster(patients_group, processing_date, village):
     
     insert_rows_safe(SMART_CLUSTERS_TABLE, [cluster_record])
     
-    # Create assignments
+    # Create assignments - all are ORIGINAL since this is the first detection
     assignments_to_insert = []
     for _, patient in patients_group.iterrows():
         assignments_to_insert.append({
@@ -553,7 +565,8 @@ def smart_gis_clustering(processing_date):
         {UNIQUE_ID},
         {CLINICAL_PRIMARY_SYNDROME},
         {LATITUDE},
-        {LONGITUDE}
+        {LONGITUDE},
+        {PATIENT_ENTRY_DATE}
     FROM `{SOURCE_TABLE}`
     WHERE 
         {PATIENT_ENTRY_DATE} BETWEEN DATE_SUB(DATE(@processing_date), INTERVAL 7 DAY) AND DATE_SUB(DATE(@processing_date), INTERVAL 1 DAY)
@@ -711,6 +724,7 @@ def find_mergeable_gis_cluster(processing_date, syndrome, lat, lon, radius):
 def expand_gis_cluster(existing_cluster, new_patients, processing_date, new_centroid_lat, new_centroid_lon):
     """Expand existing GIS cluster with new patients"""
     cluster_id = existing_cluster['smart_cluster_id']
+    original_creation_date = existing_cluster['original_creation_date']
     
     # Get existing patients with coordinates
     existing_query = f"""
@@ -782,16 +796,27 @@ def expand_gis_cluster(existing_cluster, new_patients, processing_date, new_cent
     # Use already calculated values from radius check
     new_radius = potential_radius
     
-    # Add new assignments
+    # Add new assignments with chronological labeling
     assignments_to_insert = []
-    for patient_id in truly_new_patients:
+    for _, patient in new_patients[new_patients[UNIQUE_ID].isin(truly_new_patients)].iterrows():
+        patient_disease_date = patient[PATIENT_ENTRY_DATE]
+        
+        # Label based on disease date vs cluster creation date
+        # original_creation_date is the processing_date when cluster was first created
+        if patient_disease_date < original_creation_date:
+            addition_type = 'ORIGINAL'
+            expansion_date = None
+        else:
+            addition_type = 'EXPANSION'
+            expansion_date = processing_date
+        
         assignments_to_insert.append({
             'assignment_id': str(uuid.uuid4()),
             'smart_cluster_id': cluster_id,
-            'unique_id': patient_id,
+            'unique_id': patient[UNIQUE_ID],
             'assigned_at': datetime.now(timezone.utc).isoformat(),
-            'addition_type': 'EXPANSION',
-            'expansion_date': processing_date
+            'addition_type': addition_type,
+            'expansion_date': expansion_date
         })
     
     errors = client.insert_rows_json(client.get_table(SMART_ASSIGNMENTS_TABLE), assignments_to_insert)
@@ -847,7 +872,7 @@ def create_new_gis_cluster(patients_group, processing_date, syndrome, centroid_l
     """Create new GIS cluster"""
     cluster_id = f"SMART-GIS-{int(time.time())}-{uuid.uuid4().hex[:8]}"
     
-    # Create cluster record
+    # Create cluster record with processing_date as original_creation_date
     cluster_record = {
         'smart_cluster_id': cluster_id,
         'algorithm_type': 'GIS',
@@ -864,7 +889,7 @@ def create_new_gis_cluster(patients_group, processing_date, syndrome, centroid_l
         'created_at': datetime.now(timezone.utc).isoformat()
     }
     
-    # Create assignments first
+    # Create assignments first - all are ORIGINAL since this is the first detection
     assignments_to_insert = []
     for _, patient in patients_group.iterrows():
         assignments_to_insert.append({
