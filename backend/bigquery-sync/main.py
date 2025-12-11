@@ -1,9 +1,13 @@
 import pandas as pd
 from google.cloud import bigquery
 from google.cloud import storage
+from google.cloud import bigquery_storage_v1
 import functions_framework
 import io
 import os
+from google.protobuf import descriptor_pb2
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 @functions_framework.cloud_event
 def sync_to_bigquery(cloud_event):
@@ -100,20 +104,62 @@ def sync_to_bigquery(cloud_event):
                         row_dict[key] = None
                 except:
                     row_dict[key] = None
-            elif key.startswith('sym_') and value in ['Y', 'N']:
+            elif key.startswith('sym_') and key != 'sym_eschar' and value in ['Y', 'N']:
                 row_dict[key] = value == 'Y'
-            elif key.startswith('sym_') and value in ['true', 'false']:
+            elif key.startswith('sym_') and key != 'sym_eschar' and value in ['true', 'false']:
                 row_dict[key] = value == 'true'
+            elif key == 'sym_eschar':
+                # sym_eschar is STRING type, not BOOL
+                row_dict[key] = str(value) if value is not None else None
         
         rows_to_insert.append(row_dict)
     
-    # Insert rows in batch
+    # Insert rows using Storage Write API for faster buffer clearing
     if rows_to_insert:
-        errors = bq_client.insert_rows_json(table_id, rows_to_insert)
-        if errors:
-            print(f"Errors inserting rows: {errors}")
-        else:
-            print(f"Inserted {len(rows_to_insert)} new records into {table_id}")
+        try:
+            # Convert to DataFrame and then to Arrow format
+            df_insert = pd.DataFrame(rows_to_insert)
+            
+            # Get table schema
+            table = bq_client.get_table(table_id)
+            
+            # Convert DataFrame to Arrow Table with proper schema
+            arrow_table = pa.Table.from_pandas(df_insert)
+            
+            # Use Storage Write API
+            write_client = bigquery_storage_v1.BigQueryWriteClient()
+            parent = write_client.table_path(PROJECT_ID, DATASET_ID, TABLE_ID)
+            
+            # Create write stream
+            write_stream = bigquery_storage_v1.WriteStream()
+            write_stream.type_ = bigquery_storage_v1.WriteStream.Type.COMMITTED
+            write_stream = write_client.create_write_stream(
+                parent=parent, write_stream=write_stream
+            )
+            
+            # Serialize Arrow table to bytes
+            serialized_rows = arrow_table.to_batches()[0].serialize().to_pybytes()
+            
+            # Append rows
+            request = bigquery_storage_v1.AppendRowsRequest()
+            request.write_stream = write_stream.name
+            proto_data = bigquery_storage_v1.AppendRowsRequest.ProtoData()
+            proto_data.rows = bigquery_storage_v1.ProtoRows()
+            proto_data.rows.serialized_rows = [serialized_rows]
+            request.proto_rows = proto_data
+            
+            response = write_client.append_rows([request])
+            
+            print(f"Inserted {len(rows_to_insert)} new records into {table_id} using Storage Write API")
+            
+        except Exception as e:
+            print(f"Storage Write API failed, falling back to streaming inserts: {e}")
+            # Fallback to original method
+            errors = bq_client.insert_rows_json(table_id, rows_to_insert)
+            if errors:
+                print(f"Errors inserting rows: {errors}")
+            else:
+                print(f"Inserted {len(rows_to_insert)} new records into {table_id}")
     else:
         print("No new records to insert after deduplication.")
     

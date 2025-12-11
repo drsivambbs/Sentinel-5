@@ -381,23 +381,27 @@ def get_geocoding_progress():
         SELECT 
             COUNT(*) as total_records,
             COUNTIF(latitude IS NOT NULL AND longitude IS NOT NULL) as geocoded_records,
-            ROUND(COUNTIF(latitude IS NOT NULL AND longitude IS NOT NULL) / COUNT(*) * 100, 1) as completion_pct
+            CASE 
+                WHEN COUNT(*) > 0 
+                THEN ROUND(COUNTIF(latitude IS NOT NULL AND longitude IS NOT NULL) / COUNT(*) * 100, 1)
+                ELSE 0
+            END as completion_pct
         FROM `{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}`
-        WHERE UPPER(pat_areatype) = 'URBAN'
+        WHERE UPPER(COALESCE(pat_areatype, '')) = 'URBAN'
         """
         
         query_job = client.query(query)
         results = query_job.result()
         
+        progress = {'total_records': 0, 'geocoded_records': 0, 'completion_pct': 0}
+        
         for row in results:
             progress = {
-                'total_records': row.total_records,
-                'geocoded_records': row.geocoded_records,
+                'total_records': int(row.total_records or 0),
+                'geocoded_records': int(row.geocoded_records or 0),
                 'completion_pct': float(row.completion_pct or 0)
             }
             break
-        else:
-            progress = {'total_records': 0, 'geocoded_records': 0, 'completion_pct': 0}
         
         return jsonify({
             'success': True,
@@ -405,6 +409,7 @@ def get_geocoding_progress():
         })
         
     except Exception as e:
+        print(f"Geocoding progress error: {str(e)}")
         return jsonify({
             'success': False,
             'error': str(e)
