@@ -480,8 +480,8 @@
         window.executeCleanSlate = async function() {
             const password = document.getElementById('cleanSlatePassword').value;
             
-            if (password !== 'clean-slate') {
-                showNotification('Incorrect password!', 'danger');
+            if (!password) {
+                showNotification('Password required!', 'danger');
                 return;
             }
             
@@ -489,8 +489,9 @@
                 const response = await fetch('https://smart-cluster-engine-196547645490.asia-south1.run.app/smart-truncate', {
                     method: 'POST',
                     headers: {
-                        'Content-Length': '0'
-                    }
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ password: password })
                 });
                 
                 const result = await response.json();
@@ -501,7 +502,7 @@
                     document.getElementById('cleanSlatePasswordModal').classList.add('hidden');
                     document.getElementById('cleanSlatePassword').value = '';
                 } else {
-                    showNotification('Clean slate operation failed: ' + result.error, 'danger');
+                    showNotification('Clean slate operation failed: ' + (result.error || 'Unknown error'), 'danger');
                 }
             } catch (error) {
                 showNotification('Error executing clean slate: ' + error.message, 'danger');

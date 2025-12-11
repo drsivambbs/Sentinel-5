@@ -1577,13 +1577,23 @@ def reject_cluster():
 def smart_truncate():
     """Truncate all smart clustering tables - WARNING: Deletes all data"""
     try:
+        # Validate password
+        data = request.get_json() or {}
+        password = data.get('password', '')
+        
+        if password != 'clean-slate':
+            return jsonify({
+                'success': False,
+                'error': 'Invalid password'
+            }), 401
         # Truncate all smart clustering tables
         tables_to_truncate = [
             SMART_CLUSTERS_TABLE,
             SMART_ASSIGNMENTS_TABLE,
             SMART_MERGE_HISTORY_TABLE,
             f"{PROJECT_ID}.{DATASET_ID}.smart_processing_status",
-            f"{PROJECT_ID}.{DATASET_ID}.cluster_status_overrides"
+            f"{PROJECT_ID}.{DATASET_ID}.cluster_status_overrides",
+            SOURCE_TABLE
         ]
         
         truncated_tables = []
