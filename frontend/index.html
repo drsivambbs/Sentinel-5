@@ -479,9 +479,8 @@
 
         window.executeCleanSlate = async function() {
             const password = document.getElementById('cleanSlatePassword').value;
-            const expectedPassword = process.env.CLEAN_SLATE_PASSWORD || 'clean-slate';
             
-            if (password !== expectedPassword) {
+            if (password !== 'clean-slate') {
                 showNotification('Incorrect password!', 'danger');
                 return;
             }
