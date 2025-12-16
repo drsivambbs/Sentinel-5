@@ -244,7 +244,7 @@ def check_data_quality(processing_date):
     
     if len(df) == 0 or df.total_urban[0] == 0:
         logger.info("No urban patients found - geocoding check passed")
-        return True
+        return {'passed': True, 'reason': 'no_urban_data', 'total_urban': 0, 'geocoded_urban': 0, 'geocoding_pct': 100.0}
     
     geocoding_pct = df.geocoding_pct[0]
     total_urban = df.total_urban[0]
@@ -254,7 +254,7 @@ def check_data_quality(processing_date):
     
     if geocoding_pct < GEOCODING_THRESHOLD:
         logger.warning(f"Geocoding quality {geocoding_pct*100:.1f}% below threshold {GEOCODING_THRESHOLD*100:.1f}%")
-        return False
+        return {'passed': False, 'reason': 'insufficient_geocoding', 'total_urban': total_urban, 'geocoded_urban': geocoded_urban, 'geocoding_pct': geocoding_pct*100}
     
     # Check streaming buffer
     try:
@@ -274,7 +274,7 @@ def check_data_quality(processing_date):
         logger.warning(f"Could not check streaming buffer: {str(e)}")
     
     logger.info("Data quality checks passed")
-    return True
+    return {'passed': True, 'reason': 'quality_sufficient', 'total_urban': total_urban, 'geocoded_urban': geocoded_urban, 'geocoding_pct': geocoding_pct*100}
 
 def mark_date_completed(processing_date, worker_id):
     """Mark date as completed"""
@@ -1053,13 +1053,15 @@ def smart_process():
         
         try:
             # Check data quality before processing
-            if not check_data_quality(processing_date):
-                mark_date_failed(processing_date, worker_id, "Data quality checks failed")
+            quality_result = check_data_quality(processing_date)
+            if not quality_result['passed']:
+                mark_date_failed(processing_date, worker_id, f"Data quality checks failed: {quality_result['reason']}")
                 return jsonify({
                     'success': False,
-                    'message': 'Data quality checks failed',
+                    'message': f"Data quality checks failed: {quality_result['reason']}",
                     'date_processed': processing_date,
-                    'worker_id': worker_id
+                    'worker_id': worker_id,
+                    'quality_details': quality_result
                 })
             
             # ABC Clustering
@@ -1161,7 +1163,8 @@ def smart_preflight():
             })
         
         test_date = df.date[0].strftime('%Y-%m-%d')
-        quality_passed = check_data_quality(test_date)
+        quality_result = check_data_quality(test_date)
+        quality_passed = quality_result['passed']
         overall_passed = quality_passed and pending_count == 0
         
         return jsonify({
@@ -1171,6 +1174,7 @@ def smart_preflight():
             'data_quality_passed': quality_passed,
             'pending_clusters': pending_count,
             'geocoding_threshold': GEOCODING_THRESHOLD * 100,
+            'quality_details': quality_result,
             'message': 'Preflight check and test completed'
         })
         

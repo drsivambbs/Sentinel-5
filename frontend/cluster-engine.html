@@ -260,10 +260,18 @@
                 
                 if (data.success && data.data_quality_passed && data.pending_clusters === 0) {
                     updateStepStatus(2, 'PASSED', 'status-success');
+                    const qualityDetails = data.quality_details || {};
+                    let qualityDisplay = `${data.geocoding_threshold}%`;
+                    if (qualityDetails.reason === 'no_urban_data') {
+                        qualityDisplay = 'No Urban Data';
+                    } else if (qualityDetails.geocoding_pct !== undefined) {
+                        qualityDisplay = `${qualityDetails.geocoding_pct.toFixed(1)}%`;
+                    }
+                    
                     showStepResult(2, `
                         <div class="metric-box">
                             <div class="metric-label">Geocoding Quality</div>
-                            <div class="metric-value">${data.geocoding_threshold}%</div>
+                            <div class="metric-value">${qualityDisplay}</div>
                         </div>
                         <div class="metric-box">
                             <div class="metric-label">Next Process Date</div>
@@ -277,7 +285,18 @@
                 } else {
                     updateStepStatus(2, 'FAILED', 'status-error');
                     let failReason = '';
-                    if (!data.data_quality_passed) failReason += 'Geocoding quality below threshold<br>';
+                    
+                    if (!data.data_quality_passed) {
+                        const qualityDetails = data.quality_details || {};
+                        if (qualityDetails.reason === 'insufficient_geocoding') {
+                            failReason += `Geocoding quality ${qualityDetails.geocoding_pct?.toFixed(1) || 0}% below ${data.geocoding_threshold}% threshold<br>`;
+                        } else if (qualityDetails.reason === 'no_urban_data') {
+                            failReason += 'No urban data available for processing<br>';
+                        } else {
+                            failReason += 'Geocoding quality below threshold<br>';
+                        }
+                    }
+                    
                     if (data.pending_clusters > 0) {
                         failReason += `${data.pending_clusters} clusters pending review<br><br>`;
                         failReason += `<button onclick="window.location.href='clusters-view.html'" class="bg-orange-600 hover:bg-orange-700 text-white px-3 py-2 rounded text-xs font-medium mt-2 w-full">REVIEW PENDING CLUSTERS</button>`;
