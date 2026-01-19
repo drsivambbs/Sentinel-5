@@ -15,7 +15,7 @@ gcloud functions deploy sentinel-bigquery-sync \
   --trigger-event-filters="type=google.cloud.storage.object.v1.finalized" \
   --trigger-event-filters="bucket=sentinel-cases-bucket" \
   --set-env-vars="PROJECT_ID=sentinel-h-5,DATASET_ID=sentinel_h_5,TABLE_ID=patient_records,BUCKET_NAME=sentinel-cases-bucket,FOLDER_NAME=upload" \
-  --memory=512MB \
+  --memory=1024MB \
   --timeout=300s \
   --allow-unauthenticated
 
